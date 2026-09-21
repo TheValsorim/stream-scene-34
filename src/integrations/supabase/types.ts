@@ -14,7 +14,78 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      streams: {
+        Row: {
+          camera_enabled: boolean
+          created_at: string
+          creator_id: string
+          device_type: string
+          ended_at: string | null
+          ended_reason: string | null
+          id: string
+          is_public: boolean
+          last_heartbeat_at: string
+          livekit_room_name: string
+          microphone_enabled: boolean
+          public_share_id: string
+          public_watch_url: string | null
+          started_at: string
+          status: string
+          stream_health: string
+          stream_mode: string
+          stream_provider: string
+          thumbnail_url: string | null
+          title: string
+          viewer_count: number
+        }
+        Insert: {
+          camera_enabled?: boolean
+          created_at?: string
+          creator_id: string
+          device_type?: string
+          ended_at?: string | null
+          ended_reason?: string | null
+          id?: string
+          is_public?: boolean
+          last_heartbeat_at?: string
+          livekit_room_name: string
+          microphone_enabled?: boolean
+          public_share_id: string
+          public_watch_url?: string | null
+          started_at?: string
+          status?: string
+          stream_health?: string
+          stream_mode?: string
+          stream_provider?: string
+          thumbnail_url?: string | null
+          title: string
+          viewer_count?: number
+        }
+        Update: {
+          camera_enabled?: boolean
+          created_at?: string
+          creator_id?: string
+          device_type?: string
+          ended_at?: string | null
+          ended_reason?: string | null
+          id?: string
+          is_public?: boolean
+          last_heartbeat_at?: string
+          livekit_room_name?: string
+          microphone_enabled?: boolean
+          public_share_id?: string
+          public_watch_url?: string | null
+          started_at?: string
+          status?: string
+          stream_health?: string
+          stream_mode?: string
+          stream_provider?: string
+          thumbnail_url?: string | null
+          title?: string
+          viewer_count?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
