@@ -110,7 +110,7 @@ export async function createStream({
   return data as StreamRow;
 }
 
-export async function patchStream(streamId: string, patch: Record<string, unknown>) {
+export async function patchStream(streamId: string, patch: Partial<StreamRow>) {
   const { error } = await supabase.from("streams").update(patch).eq("id", streamId);
   if (error) throw error;
 }
