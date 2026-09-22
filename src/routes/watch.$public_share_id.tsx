@@ -35,6 +35,7 @@ function WatchPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const roomRef = useRef<Room | null>(null);
+  const joinedRef = useRef(false);
 
   // 1. Load the stream record by its public share id.
   useEffect(() => {
