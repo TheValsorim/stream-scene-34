@@ -108,7 +108,12 @@ function WatchPage() {
           roomName: stream.livekit_room_name,
           participantName: `viewer_${Math.random().toString(36).slice(2, 10)}`,
         });
-        await room.connect(serverUrl, token, { autoSubscribe: true });
+        await Promise.race([
+          room.connect(serverUrl, token, { autoSubscribe: true }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("connect timeout")), 30_000),
+          ),
+        ]);
         if (cancelled) return;
         setPhase((p) => (p === "live" || p === "tap" ? p : "waiting"));
         scanTracks();
