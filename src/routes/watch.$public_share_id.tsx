@@ -35,6 +35,7 @@ function WatchPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const roomRef = useRef<Room | null>(null);
+  const joinedRef = useRef(false);
 
   // 1. Load the stream record by its public share id.
   useEffect(() => {
@@ -99,7 +100,13 @@ function WatchPage() {
     room.on(RoomEvent.TrackPublished, () => scanTracks());
     room.on(RoomEvent.ParticipantConnected, () => scanTracks());
     room.on(RoomEvent.Disconnected, () => {
-      if (!cancelled) setPhase("ended");
+      if (cancelled) return;
+      if (joinedRef.current) {
+        setPhase("ended");
+      } else {
+        setPhase("error");
+        setMessage("We couldn't connect to this stream.");
+      }
     });
 
     (async () => {
@@ -108,8 +115,14 @@ function WatchPage() {
           roomName: stream.livekit_room_name,
           participantName: `viewer_${Math.random().toString(36).slice(2, 10)}`,
         });
-        await room.connect(serverUrl, token, { autoSubscribe: true });
+        await Promise.race([
+          room.connect(serverUrl, token, { autoSubscribe: true }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("connect timeout")), 30_000),
+          ),
+        ]);
         if (cancelled) return;
+        joinedRef.current = true;
         setPhase((p) => (p === "live" || p === "tap" ? p : "waiting"));
         scanTracks();
       } catch {
