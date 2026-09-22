@@ -52,6 +52,13 @@ export function StreamStudio({ userId }: { userId: string }) {
     }
   }, []);
 
+  // The preview <video> only mounts after the phase flips to "setup",
+  // so (re)attach the captured stream once the element exists.
+  useEffect(() => {
+    const ms = mediaStreamRef.current;
+    if (ms && phase !== "choose" && phase !== "ended") attachPreview(ms);
+  }, [phase, attachPreview]);
+
   const stopMedia = useCallback(() => {
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
     mediaStreamRef.current = null;
@@ -158,7 +165,15 @@ export function StreamStudio({ userId }: { userId: string }) {
       room.on(RoomEvent.ParticipantConnected, updateViewers);
       room.on(RoomEvent.ParticipantDisconnected, updateViewers);
 
-      await room.connect(serverUrl, token);
+      await Promise.race([
+        room.connect(serverUrl, token),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Connection timed out. Check your network and try again.")),
+            30_000,
+          ),
+        ),
+      ]);
 
       const videoMediaTrack = ms.getVideoTracks()[0];
       if (!videoMediaTrack) throw new Error("No video track available to publish.");
