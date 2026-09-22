@@ -99,7 +99,13 @@ function WatchPage() {
     room.on(RoomEvent.TrackPublished, () => scanTracks());
     room.on(RoomEvent.ParticipantConnected, () => scanTracks());
     room.on(RoomEvent.Disconnected, () => {
-      if (!cancelled) setPhase("ended");
+      if (cancelled) return;
+      if (joinedRef.current) {
+        setPhase("ended");
+      } else {
+        setPhase("error");
+        setMessage("We couldn't connect to this stream.");
+      }
     });
 
     (async () => {
@@ -115,6 +121,7 @@ function WatchPage() {
           ),
         ]);
         if (cancelled) return;
+        joinedRef.current = true;
         setPhase((p) => (p === "live" || p === "tap" ? p : "waiting"));
         scanTracks();
       } catch {
