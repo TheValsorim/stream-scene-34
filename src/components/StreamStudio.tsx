@@ -173,7 +173,7 @@ export function StreamStudio({ userId }: { userId: string }) {
           ? new LocalAudioTrack(capturedAudio)
           : await createLocalAudioTrack();
         audioTrackRef.current = audioTrack;
-        await room.localParticipant.publishTrack(audioTrack);
+        await room.localParticipant.publishTrack(audioTrack.mediaStreamTrack);
       }
 
       // The user can stop screen sharing from the browser's own control bar.
