@@ -293,12 +293,33 @@ export function StreamStudio({ userId }: { userId: string }) {
     if (mode !== "camera") return;
     const next = facingMode === "user" ? "environment" : "user";
     try {
-      const ms = await requestMedia("camera", next);
+      let ms: MediaStream;
+      try {
+        ms = await requestMedia("camera", next);
+      } catch (err) {
+        // Many phones only allow one camera at a time: release the current one
+        // and retry before giving up.
+        const name = (err as { name?: string } | null)?.name;
+        if (name !== "NotReadableError" && name !== "AbortError") throw err;
+        mediaStreamRef.current?.getVideoTracks().forEach((t) => t.stop());
+        ms = await requestMedia("camera", next);
+      }
+
       const newVideo = ms.getVideoTracks()[0];
       if (!newVideo) throw new Error("No camera track found.");
       if (videoTrackRef.current) await videoTrackRef.current.replaceTrack(newVideo);
-      mediaStreamRef.current?.getVideoTracks().forEach((t) => t.stop());
-      attachPreview(ms);
+
+      const previous = mediaStreamRef.current;
+      // Keep the published audio track alive; only the camera is swapped.
+      const previewStream = new MediaStream([
+        newVideo,
+        ...(previous?.getAudioTracks() ?? ms.getAudioTracks()),
+      ]);
+      previous?.getVideoTracks().forEach((t) => t.stop());
+      ms.getAudioTracks().forEach((t) => {
+        if (previous?.getAudioTracks().length) t.stop();
+      });
+      attachPreview(previewStream);
       setFacingMode(next);
     } catch (err) {
       toast.error(describeMediaError(err, "camera"));
