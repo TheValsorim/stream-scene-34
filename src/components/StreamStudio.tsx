@@ -46,9 +46,15 @@ export function StreamStudio({ userId }: { userId: string }) {
     mediaStreamRef.current = ms;
     const el = previewRef.current;
     if (el) {
+      // Force a clean re-attach: some browsers (iOS Safari in particular) keep
+      // rendering the old, now-stopped track and show black if we just swap.
+      el.srcObject = null;
       el.srcObject = ms;
       el.muted = true;
-      el.play().catch(() => {});
+      el.playsInline = true;
+      const tryPlay = () => el.play().catch(() => {});
+      tryPlay();
+      el.onloadedmetadata = tryPlay;
     }
   }, []);
 
