@@ -41,6 +41,7 @@ export function StreamStudio({ userId }: { userId: string }) {
   const audioTrackRef = useRef<LocalAudioTrack | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamIdRef = useRef<string | null>(null);
+  const flippingRef = useRef(false);
 
   const attachPreview = useCallback((ms: MediaStream) => {
     mediaStreamRef.current = ms;
@@ -290,39 +291,62 @@ export function StreamStudio({ userId }: { userId: string }) {
   }
 
   async function handleSwitchCamera() {
-    if (mode !== "camera") return;
+    if (mode !== "camera" || flippingRef.current) return;
+    flippingRef.current = true;
     const next = facingMode === "user" ? "environment" : "user";
+    // Video only: re-requesting audio on iOS Safari silently kills the live mic track.
+    const getVideo = () =>
+      navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: next },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30, max: 30 },
+        },
+        audio: false,
+      });
+    const previous = mediaStreamRef.current;
     try {
       let ms: MediaStream;
       try {
-        ms = await requestMedia("camera", next);
+        ms = await getVideo();
       } catch (err) {
-        // Many phones only allow one camera at a time: release the current one
-        // and retry before giving up.
+        // Many phones (most Android) only allow one camera at a time.
         const name = (err as { name?: string } | null)?.name;
-        if (name !== "NotReadableError" && name !== "AbortError") throw err;
-        mediaStreamRef.current?.getVideoTracks().forEach((t) => t.stop());
-        ms = await requestMedia("camera", next);
+        if (name !== "NotReadableError" && name !== "AbortError" && name !== "OverconstrainedError")
+          throw err;
+        previous?.getVideoTracks().forEach((t) => t.stop());
+        ms = await getVideo();
       }
 
       const newVideo = ms.getVideoTracks()[0];
       if (!newVideo) throw new Error("No camera track found.");
       if (videoTrackRef.current) await videoTrackRef.current.replaceTrack(newVideo);
 
-      const previous = mediaStreamRef.current;
-      // Keep the published audio track alive; only the camera is swapped.
-      const previewStream = new MediaStream([
-        newVideo,
-        ...(previous?.getAudioTracks() ?? ms.getAudioTracks()),
-      ]);
-      previous?.getVideoTracks().forEach((t) => t.stop());
-      ms.getAudioTracks().forEach((t) => {
-        if (previous?.getAudioTracks().length) t.stop();
+      previous?.getVideoTracks().forEach((t) => {
+        if (t !== newVideo) t.stop();
       });
-      attachPreview(previewStream);
+      attachPreview(new MediaStream([newVideo, ...(previous?.getAudioTracks() ?? [])]));
       setFacingMode(next);
     } catch (err) {
       toast.error(describeMediaError(err, "camera"));
+      // If the old camera was already released, try to restore it so the stream isn't black.
+      const oldVideo = previous?.getVideoTracks()[0];
+      if (!oldVideo || oldVideo.readyState === "ended") {
+        try {
+          const restore = await requestMedia("camera", facingMode);
+          const v = restore.getVideoTracks()[0];
+          restore.getAudioTracks().forEach((t) => t.stop());
+          if (v) {
+            if (videoTrackRef.current) await videoTrackRef.current.replaceTrack(v);
+            attachPreview(new MediaStream([v, ...(previous?.getAudioTracks() ?? [])]));
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    } finally {
+      flippingRef.current = false;
     }
   }
 
