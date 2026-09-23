@@ -19,6 +19,7 @@ export type Database = {
           camera_enabled: boolean
           created_at: string
           creator_id: string
+          description: string | null
           device_type: string
           ended_at: string | null
           ended_reason: string | null
@@ -42,6 +43,7 @@ export type Database = {
           camera_enabled?: boolean
           created_at?: string
           creator_id: string
+          description?: string | null
           device_type?: string
           ended_at?: string | null
           ended_reason?: string | null
@@ -65,6 +67,7 @@ export type Database = {
           camera_enabled?: boolean
           created_at?: string
           creator_id?: string
+          description?: string | null
           device_type?: string
           ended_at?: string | null
           ended_reason?: string | null
