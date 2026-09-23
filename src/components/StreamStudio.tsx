@@ -32,7 +32,7 @@ export function StreamStudio({ userId }: { userId: string }) {
   const [stream, setStream] = useState<StreamRow | null>(null);
   const [viewerCount, setViewerCount] = useState(0);
   const [copied, setCopied] = useState(false);
-  const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
+  const [facingMode, setFacingMode] = useState<"user" | "environment">("environment");
 
   const previewRef = useRef<HTMLVideoElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -67,7 +67,7 @@ export function StreamStudio({ userId }: { userId: string }) {
 
   /** Ask the browser for the screen or camera, then show a local preview. */
   const requestMedia = useCallback(
-    async (nextMode: StreamMode, facing: "user" | "environment" = "user") => {
+    async (nextMode: StreamMode, facing: "user" | "environment" = "environment") => {
       if (typeof navigator === "undefined" || !navigator.mediaDevices) {
         throw new Error("Your browser does not support streaming from this page.");
       }
@@ -192,9 +192,13 @@ export function StreamStudio({ userId }: { userId: string }) {
       }
 
       // The user can stop screen sharing from the browser's own control bar.
-      videoMediaTrack.addEventListener("ended", () => {
-        void finishStream("ended_by_user");
-      });
+      // Camera mode is excluded on purpose: flipping the camera stops the old
+      // track, and that "ended" event must not tear down the live stream.
+      if (mode === "screen") {
+        videoMediaTrack.addEventListener("ended", () => {
+          void finishStream("ended_by_user");
+        });
+      }
 
       await patchStream(created.id, {
         status: "live",
