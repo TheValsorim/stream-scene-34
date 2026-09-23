@@ -67,7 +67,7 @@ export function StreamStudio({ userId }: { userId: string }) {
 
   /** Ask the browser for the screen or camera, then show a local preview. */
   const requestMedia = useCallback(
-    async (nextMode: StreamMode, facing: "user" | "environment" = "user") => {
+    async (nextMode: StreamMode, facing: "user" | "environment" = "environment") => {
       if (typeof navigator === "undefined" || !navigator.mediaDevices) {
         throw new Error("Your browser does not support streaming from this page.");
       }
