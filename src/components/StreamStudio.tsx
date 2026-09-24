@@ -350,10 +350,15 @@ export function StreamStudio({ userId }: { userId: string }) {
     }
   }
 
-  const watchUrl =
-    stream && typeof window !== "undefined"
-      ? `${window.location.origin}/watch/${stream.public_share_id}`
-      : "";
+  // Editor preview links require a Lovable login, so always share the public site.
+  const shareOrigin =
+    typeof window !== "undefined" &&
+    /(^|\.)(id-preview[^.]*|[0-9a-f-]{36})\.|lovableproject|localhost/.test(window.location.hostname)
+      ? "https://stream-scene-34.lovable.app"
+      : typeof window !== "undefined"
+        ? window.location.origin
+        : "";
+  const watchUrl = stream ? `${shareOrigin}/watch/${stream.public_share_id}` : "";
 
   async function handleCopy() {
     try {

@@ -201,7 +201,7 @@ function WatchPage() {
       <main className="mx-auto w-full max-w-5xl px-4 py-8">
         <div className="relative overflow-hidden rounded-2xl border border-border bg-background">
           <div className="aspect-video">
-            <video ref={videoRef} playsInline autoPlay className="size-full object-contain" />
+            <video ref={videoRef} playsInline autoPlay className="size-full object-cover" />
             <audio ref={audioRef} autoPlay className="hidden" />
           </div>
 
