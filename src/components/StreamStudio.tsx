@@ -423,7 +423,7 @@ export function StreamStudio({ userId }: { userId: string }) {
             playsInline
             muted
             autoPlay
-            className="size-full object-contain"
+            className="size-full object-cover"
           />
           {phase === "live" && (
             <>
