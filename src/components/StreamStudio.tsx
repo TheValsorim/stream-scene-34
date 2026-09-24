@@ -294,52 +294,70 @@ export function StreamStudio({ userId }: { userId: string }) {
     if (mode !== "camera" || flippingRef.current) return;
     flippingRef.current = true;
     const next = facingMode === "user" ? "environment" : "user";
-    // Video only: re-requesting audio on iOS Safari silently kills the live mic track.
-    const getVideo = () =>
-      navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: next },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30, max: 30 },
-        },
-        audio: false,
-      });
     const previous = mediaStreamRef.current;
+    const previousFacingMode = facingMode;
+    const audioTracks = previous?.getAudioTracks() ?? [];
+    const publishedTrack = videoTrackRef.current;
+
+    const videoConstraints: MediaTrackConstraints = {
+      facingMode: { ideal: next },
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      frameRate: { ideal: 30, max: 30 },
+    };
+
     try {
-      let ms: MediaStream;
-      try {
-        ms = await getVideo();
-      } catch (err) {
-        // Many phones (most Android) only allow one camera at a time.
-        const name = (err as { name?: string } | null)?.name;
-        if (name !== "NotReadableError" && name !== "AbortError" && name !== "OverconstrainedError")
-          throw err;
+      let newVideo: MediaStreamTrack | undefined;
+
+      if (publishedTrack) {
+        // LiveKit restarts the source behind the existing publication. This is
+        // safer on mobile than opening a second camera and replacing the track:
+        // iOS and many Android devices only allow one active camera at a time.
+        await publishedTrack.restartTrack({
+          facingMode: next,
+          resolution: { width: 1280, height: 720 },
+          frameRate: 30,
+        });
+        newVideo = publishedTrack.mediaStreamTrack;
+      } else {
+        // Before going live there is no LiveKit publication to restart, so
+        // release the current lens before requesting the other one.
         previous?.getVideoTracks().forEach((t) => t.stop());
-        ms = await getVideo();
+        const replacement = await navigator.mediaDevices.getUserMedia({
+          video: videoConstraints,
+          audio: false,
+        });
+        newVideo = replacement.getVideoTracks()[0];
       }
 
-      const newVideo = ms.getVideoTracks()[0];
       if (!newVideo) throw new Error("No camera track found.");
-      if (videoTrackRef.current) await videoTrackRef.current.replaceTrack(newVideo);
-
-      previous?.getVideoTracks().forEach((t) => {
-        if (t !== newVideo) t.stop();
-      });
-      attachPreview(new MediaStream([newVideo, ...(previous?.getAudioTracks() ?? [])]));
+      newVideo.enabled = true;
+      attachPreview(new MediaStream([newVideo, ...audioTracks]));
       setFacingMode(next);
     } catch (err) {
       toast.error(describeMediaError(err, "camera"));
-      // If the old camera was already released, try to restore it so the stream isn't black.
-      const oldVideo = previous?.getVideoTracks()[0];
-      if (!oldVideo || oldVideo.readyState === "ended") {
+      // If restarting stopped the source, restore the previous lens and keep
+      // both the local preview and the published track alive.
+      const activeVideo = publishedTrack?.mediaStreamTrack;
+      if (!activeVideo || activeVideo.readyState === "ended") {
         try {
-          const restore = await requestMedia("camera", facingMode);
-          const v = restore.getVideoTracks()[0];
-          restore.getAudioTracks().forEach((t) => t.stop());
-          if (v) {
-            if (videoTrackRef.current) await videoTrackRef.current.replaceTrack(v);
-            attachPreview(new MediaStream([v, ...(previous?.getAudioTracks() ?? [])]));
+          if (publishedTrack) {
+            await publishedTrack.restartTrack({
+              facingMode: previousFacingMode,
+              resolution: { width: 1280, height: 720 },
+              frameRate: 30,
+            });
+            attachPreview(new MediaStream([publishedTrack.mediaStreamTrack, ...audioTracks]));
+          } else {
+            const restore = await navigator.mediaDevices.getUserMedia({
+              video: {
+                ...videoConstraints,
+                facingMode: { ideal: previousFacingMode },
+              },
+              audio: false,
+            });
+            const restoredVideo = restore.getVideoTracks()[0];
+            if (restoredVideo) attachPreview(new MediaStream([restoredVideo, ...audioTracks]));
           }
         } catch {
           /* ignore */
