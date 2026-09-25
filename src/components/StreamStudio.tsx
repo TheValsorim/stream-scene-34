@@ -82,7 +82,7 @@ export function StreamStudio({ userId }: { userId: string }) {
       if (nextMode === "screen") {
         if (!navigator.mediaDevices.getDisplayMedia) {
           throw new Error(
-            "Screen sharing isn't available in this browser. Try Chrome, Edge or Firefox on a computer.",
+            "Phones and tablets don't allow screen sharing from a web browser (Apple and Google block it). Use Camera here, or open ArenaHub on a computer in Chrome, Edge or Firefox to share your screen.",
           );
         }
         return navigator.mediaDevices.getDisplayMedia({
@@ -270,6 +270,46 @@ export function StreamStudio({ userId }: { userId: string }) {
       window.removeEventListener("beforeunload", handlePageHide);
     };
   }, [phase, stream, viewerCount]);
+
+  // Phones pause or kill the camera when you leave the browser. When the page
+  // comes back, revive the camera if needed and restart the preview.
+  useEffect(() => {
+    if (phase === "choose" || phase === "ended") return;
+    const revive = async () => {
+      if (document.visibilityState !== "visible" || mode !== "camera") return;
+      const ms = mediaStreamRef.current;
+      const audio = ms?.getAudioTracks() ?? [];
+      let video = videoTrackRef.current?.mediaStreamTrack ?? ms?.getVideoTracks()[0];
+      try {
+        if (!video || video.readyState === "ended" || video.muted) {
+          if (videoTrackRef.current) {
+            await videoTrackRef.current.restartTrack({
+              facingMode,
+              resolution: { width: 1280, height: 720 },
+              frameRate: 30,
+            });
+            video = videoTrackRef.current.mediaStreamTrack;
+          } else {
+            const fresh = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
+              audio: false,
+            });
+            video = fresh.getVideoTracks()[0];
+          }
+        }
+        if (video) attachPreview(new MediaStream([video, ...audio]));
+      } catch (err) {
+        toast.error(describeMediaError(err, "camera"));
+      }
+    };
+    const onVisible = () => void setTimeout(revive, 300);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onVisible);
+    };
+  }, [phase, mode, facingMode, attachPreview]);
 
   // Stop capture if the component unmounts.
   useEffect(() => stopMedia, [stopMedia]);
