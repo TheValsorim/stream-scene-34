@@ -42,6 +42,7 @@ export function StreamStudio({ userId }: { userId: string }) {
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamIdRef = useRef<string | null>(null);
   const flippingRef = useRef(false);
+  const reconnectingRef = useRef(false);
 
   const attachPreview = useCallback((ms: MediaStream) => {
     mediaStreamRef.current = ms;
@@ -408,6 +409,54 @@ export function StreamStudio({ userId }: { userId: string }) {
     }
   }
 
+  /** Manual recovery when the preview stays black (e.g. after returning to the tab):
+   *  re-open the camera, rebuild the preview, and swap the live track if broadcasting. */
+  async function handleReconnectCamera() {
+    if (mode !== "camera" || reconnectingRef.current) return;
+    reconnectingRef.current = true;
+    const previous = mediaStreamRef.current;
+    const audioTracks = previous?.getAudioTracks() ?? [];
+    const getVideo = () =>
+      navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30, max: 30 },
+        },
+        audio: false,
+      });
+
+    try {
+      let fresh: MediaStream;
+      try {
+        fresh = await getVideo();
+      } catch (err) {
+        // Many phones only allow one camera at a time — release the old one and retry.
+        const name = (err as { name?: string } | null)?.name;
+        if (name !== "NotReadableError" && name !== "AbortError" && name !== "OverconstrainedError")
+          throw err;
+        previous?.getVideoTracks().forEach((t) => t.stop());
+        fresh = await getVideo();
+      }
+
+      const video = fresh.getVideoTracks()[0];
+      if (!video) throw new Error("No camera track found.");
+      previous?.getVideoTracks().forEach((t) => {
+        if (t !== video) t.stop();
+      });
+      if (phase === "live" && videoTrackRef.current) {
+        await videoTrackRef.current.replaceTrack(video);
+      }
+      attachPreview(new MediaStream([video, ...audioTracks]));
+      toast.success("Camera reconnected");
+    } catch (err) {
+      toast.error(describeMediaError(err, "camera"));
+    } finally {
+      reconnectingRef.current = false;
+    }
+  }
+
   // Editor preview links require a Lovable login, so always share the public site.
   const shareOrigin =
     typeof window !== "undefined" &&
@@ -522,10 +571,16 @@ export function StreamStudio({ userId }: { userId: string }) {
                 {micEnabled ? "Mute" : "Unmute"}
               </Button>
               {mode === "camera" && (
-                <Button variant="secondary" onClick={handleSwitchCamera}>
-                  <RefreshCw className="mr-2 size-4" />
-                  Flip camera
-                </Button>
+                <>
+                  <Button variant="secondary" onClick={handleSwitchCamera}>
+                    <RefreshCw className="mr-2 size-4" />
+                    Flip camera
+                  </Button>
+                  <Button variant="secondary" onClick={handleReconnectCamera}>
+                    <Camera className="mr-2 size-4" />
+                    Reconnect camera
+                  </Button>
+                </>
               )}
             </div>
 
@@ -586,6 +641,12 @@ export function StreamStudio({ userId }: { userId: string }) {
             >
               Back
             </Button>
+            {mode === "camera" && (
+              <Button variant="ghost" className="mt-2 w-full" onClick={handleReconnectCamera}>
+                <Camera className="mr-2 size-4" />
+                Camera not showing? Reconnect
+              </Button>
+            )}
 
             {error && <ErrorNote message={error} />}
           </>
