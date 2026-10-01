@@ -38,7 +38,7 @@ function StreamPage() {
 
         {user && (
           <div className="mt-6">
-            <ChannelLink userId={user.id} email={user.email} />
+            <ChannelLink userId={user.id} email={user.email ?? null} />
           </div>
         )}
 
