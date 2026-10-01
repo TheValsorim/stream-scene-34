@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppHeader } from "@/components/AppHeader";
 import { StreamStudio } from "@/components/StreamStudio";
+import { ChannelLink } from "@/components/ChannelLink";
 import { useSession } from "@/hooks/use-session";
 
 export const Route = createFileRoute("/_authenticated/stream")({
@@ -34,6 +35,12 @@ function StreamPage() {
         <p className="mt-1 text-sm text-muted-foreground">
           Pick how you want to stream. You'll get a public watch link the moment you go live.
         </p>
+
+        {user && (
+          <div className="mt-6">
+            <ChannelLink userId={user.id} email={user.email} />
+          </div>
+        )}
 
         <div className="mt-8">
           {loading || !user ? (
