@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Room, RoomEvent, type RemoteTrack, type RemoteTrackPublication } from "livekit-client";
-import { Eye } from "lucide-react";
+import { Eye, Maximize, Minimize } from "lucide-react";
 import { Brand } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { getLiveKitConnection } from "@/lib/livekit";
@@ -33,6 +33,8 @@ function WatchPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const playerRef = useRef<HTMLDivElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const roomRef = useRef<Room | null>(null);
   const joinedRef = useRef(false);
@@ -159,6 +161,40 @@ function WatchPage() {
     return () => clearInterval(interval);
   }, [stream, phase, public_share_id]);
 
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onChange);
+    document.addEventListener("webkitfullscreenchange", onChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onChange);
+      document.removeEventListener("webkitfullscreenchange", onChange);
+    };
+  }, []);
+
+  async function toggleFullscreen() {
+    const el = playerRef.current as (HTMLDivElement & { webkitRequestFullscreen?: () => void }) | null;
+    const v = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+      if (el?.requestFullscreen) {
+        await el.requestFullscreen();
+        await (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })
+          ?.lock?.("landscape")
+          .catch(() => {});
+      } else if (el?.webkitRequestFullscreen) {
+        el.webkitRequestFullscreen();
+      } else if (v?.webkitEnterFullscreen) {
+        // iPhone Safari only supports fullscreen on the video element itself.
+        v.webkitEnterFullscreen();
+      }
+    } catch {
+      v?.webkitEnterFullscreen?.();
+    }
+  }
+
   async function handleTapToPlay() {
     try {
       await roomRef.current?.startAudio();
@@ -199,11 +235,30 @@ function WatchPage() {
       </header>
 
       <main className="mx-auto w-full max-w-5xl px-4 py-8">
-        <div className="relative overflow-hidden rounded-2xl border border-border bg-background">
-          <div className="aspect-video">
-            <video ref={videoRef} playsInline autoPlay className="size-full object-cover" />
+        <div
+          ref={playerRef}
+          className="relative overflow-hidden rounded-2xl border border-border bg-background [&:fullscreen]:rounded-none [&:fullscreen]:border-0"
+        >
+          <div className={isFullscreen ? "size-full" : "aspect-video"}>
+            <video
+              ref={videoRef}
+              playsInline
+              autoPlay
+              className={`size-full ${isFullscreen ? "object-contain" : "object-cover"}`}
+            />
             <audio ref={audioRef} autoPlay className="hidden" />
           </div>
+          {(phase === "live" || phase === "tap") && (
+            <Button
+              size="icon"
+              variant="secondary"
+              aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
+              onClick={toggleFullscreen}
+              className="absolute bottom-3 right-3 z-10 size-11 rounded-full bg-background/80"
+            >
+              {isFullscreen ? <Minimize className="size-5" /> : <Maximize className="size-5" />}
+            </Button>
+          )}
 
           {phase !== "live" && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-background/85 px-6 text-center">
