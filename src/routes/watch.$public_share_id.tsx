@@ -38,6 +38,7 @@ function WatchPage() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const roomRef = useRef<Room | null>(null);
   const joinedRef = useRef(false);
+  const [paused, setPaused] = useState(false);
 
   // 1. Load the stream record by its public share id.
   useEffect(() => {
@@ -83,7 +84,7 @@ function WatchPage() {
 
   // 2. Join the LiveKit room and subscribe to the broadcaster's tracks.
   useEffect(() => {
-    if (!stream || phase === "ended") return;
+    if (!stream || phase === "ended" || paused) return;
 
     let cancelled = false;
     const room = new Room({ adaptiveStream: true });
@@ -140,10 +141,47 @@ function WatchPage() {
     return () => {
       cancelled = true;
       clearInterval(poller);
+      room.remoteParticipants.forEach((p) =>
+        p.trackPublications.forEach((pub) => pub.track?.detach()),
+      );
       room.disconnect().catch(() => {});
       roomRef.current = null;
+      for (const el of [videoRef.current, audioRef.current]) {
+        if (!el) continue;
+        el.pause();
+        el.srcObject = null;
+      }
     };
-  }, [stream, attachTrack, phase === "ended"]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stream?.id, attachTrack, phase === "ended", paused]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Stop all sound and the connection when the viewer leaves the page or app.
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === "hidden") setPaused(true);
+    };
+    const onShow = () => {
+      if (document.visibilityState === "visible") {
+        setPaused(false);
+        setPhase((p) => (p === "ended" || p === "error" || p === "loading" ? p : "connecting"));
+      }
+    };
+    const onPageHide = () => {
+      roomRef.current?.disconnect().catch(() => {});
+      videoRef.current?.pause();
+      audioRef.current?.pause();
+      setPaused(true);
+    };
+    document.addEventListener("visibilitychange", onHide);
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      document.removeEventListener("visibilitychange", onShow);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onShow);
+    };
+  }, []);
 
   // 3. Keep checking whether the broadcaster is still sending heartbeats.
   useEffect(() => {
