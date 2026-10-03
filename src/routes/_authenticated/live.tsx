@@ -32,6 +32,12 @@ function LivePage() {
     refetchInterval: 10_000,
   });
 
+  const { data: profiles } = useQuery({
+    queryKey: ["profiles"],
+    queryFn: fetchProfiles,
+    refetchInterval: 60_000,
+  });
+
   useEffect(() => {
     const channel = supabase
       .channel("live-streams")
