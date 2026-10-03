@@ -72,6 +72,18 @@ export async function updateChannelSlug(userId: string, slug: string): Promise<P
   return data as Profile;
 }
 
+/** All registered users' channel profiles, oldest first. */
+export async function fetchProfiles(): Promise<Profile[]> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, channel_slug, display_name")
+    .order("created_at", { ascending: true })
+    .limit(200);
+
+  if (error) throw error;
+  return (data as Profile[]) ?? [];
+}
+
 /** The channel's currently live stream, if any. */
 export async function fetchLiveStreamForCreator(creatorId: string): Promise<StreamRow | null> {
   const since = new Date(Date.now() - STALE_THRESHOLD_MS).toISOString();

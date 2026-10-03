@@ -1,11 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { Eye, Monitor, Camera, Radio } from "lucide-react";
+import { Eye, Monitor, Camera, Radio, Users } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchLiveStreams, type StreamRow } from "@/lib/streams";
+import { fetchProfiles, type Profile } from "@/lib/profiles";
 
 export const Route = createFileRoute("/_authenticated/live")({
   head: () => ({
@@ -31,6 +32,12 @@ function LivePage() {
     refetchInterval: 10_000,
   });
 
+  const { data: profiles } = useQuery({
+    queryKey: ["profiles"],
+    queryFn: fetchProfiles,
+    refetchInterval: 60_000,
+  });
+
   useEffect(() => {
     const channel = supabase
       .channel("live-streams")
@@ -44,6 +51,8 @@ function LivePage() {
   }, [refetch]);
 
   const streams = data ?? [];
+  const liveCreatorIds = new Set(streams.map((s) => s.creator_id));
+  const channels = profiles ?? [];
 
   return (
     <div className="min-h-screen">
@@ -89,8 +98,57 @@ function LivePage() {
             ))}
           </div>
         )}
+
+        <section className="mt-14">
+          <div className="flex items-center gap-2">
+            <Users className="size-5 text-muted-foreground" />
+            <h2 className="text-lg font-semibold">Channels</h2>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Everyone registered on ArenaHub. Open a channel to see if they're live.
+          </p>
+
+          {channels.length === 0 ? (
+            <p className="mt-5 text-sm text-muted-foreground">No channels yet.</p>
+          ) : (
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {channels.map((profile) => (
+                <ChannelCard
+                  key={profile.id}
+                  profile={profile}
+                  isLive={liveCreatorIds.has(profile.id)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
       </main>
     </div>
+  );
+}
+
+function ChannelCard({ profile, isLive }: { profile: Profile; isLive: boolean }) {
+  const name = profile.display_name ?? `@${profile.channel_slug}`;
+  return (
+    <Link
+      to="/c/$slug"
+      params={{ slug: profile.channel_slug }}
+      className="group flex items-center gap-3 rounded-2xl border border-border bg-card p-4 transition-colors hover:border-primary/60"
+    >
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-semibold uppercase">
+        {name.charAt(0)}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium group-hover:text-primary">{name}</span>
+        <span className="block truncate text-xs text-muted-foreground">@{profile.channel_slug}</span>
+      </span>
+      {isLive && (
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-live px-2 py-1 text-xs font-semibold uppercase tracking-wide text-live-foreground">
+          <span className="size-1.5 rounded-full bg-live-foreground live-pulse" />
+          Live
+        </span>
+      )}
+    </Link>
   );
 }
 
