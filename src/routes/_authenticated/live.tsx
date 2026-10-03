@@ -1,11 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { Eye, Monitor, Camera, Radio } from "lucide-react";
+import { Eye, Monitor, Camera, Radio, Users } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchLiveStreams, type StreamRow } from "@/lib/streams";
+import { fetchProfiles, type Profile } from "@/lib/profiles";
 
 export const Route = createFileRoute("/_authenticated/live")({
   head: () => ({
