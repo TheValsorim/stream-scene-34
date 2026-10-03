@@ -14,7 +14,7 @@ export const getTroubleshootingSteps = createServerFn({ method: "POST" })
       .parse(data),
   )
   .handler(async ({ data }) => {
-    const apiKey = process.env.LOVABLE_API_KEY;
+    const apiKey = process.env["LOVABLE_API_KEY"];
     if (!apiKey) return { ok: false as const, error: "The AI helper isn't set up yet." };
     const { suggestFix } = await import("./troubleshoot.server");
     try {
