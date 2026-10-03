@@ -51,6 +51,8 @@ function LivePage() {
   }, [refetch]);
 
   const streams = data ?? [];
+  const liveCreatorIds = new Set(streams.map((s) => s.creator_id));
+  const channels = profiles ?? [];
 
   return (
     <div className="min-h-screen">
