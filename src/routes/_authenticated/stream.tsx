@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AppHeader } from "@/components/AppHeader";
 import { StreamStudio } from "@/components/StreamStudio";
 import { ChannelLink } from "@/components/ChannelLink";
+import { TroubleshootHelper } from "@/components/TroubleshootHelper";
 import { useSession } from "@/hooks/use-session";
 
 export const Route = createFileRoute("/_authenticated/stream")({
@@ -48,6 +49,10 @@ function StreamPage() {
           ) : (
             <StreamStudio userId={user.id} />
           )}
+        </div>
+
+        <div className="mt-8">
+          <TroubleshootHelper />
         </div>
       </main>
     </div>
