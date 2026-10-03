@@ -98,6 +98,30 @@ function LivePage() {
             ))}
           </div>
         )}
+
+        <section className="mt-14">
+          <div className="flex items-center gap-2">
+            <Users className="size-5 text-muted-foreground" />
+            <h2 className="text-lg font-semibold">Channels</h2>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Everyone registered on ArenaHub. Open a channel to see if they're live.
+          </p>
+
+          {channels.length === 0 ? (
+            <p className="mt-5 text-sm text-muted-foreground">No channels yet.</p>
+          ) : (
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {channels.map((profile) => (
+                <ChannelCard
+                  key={profile.id}
+                  profile={profile}
+                  isLive={liveCreatorIds.has(profile.id)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );
