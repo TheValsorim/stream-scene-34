@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AudioPresets,
   LocalAudioTrack,
   LocalVideoTrack,
   Room,
   RoomEvent,
+  VideoPresets,
   createLocalAudioTrack,
 } from "livekit-client";
 import { Camera, Check, Copy, Eye, Mic, MicOff, Monitor, RefreshCw, Square } from "lucide-react";
@@ -12,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getLiveKitConnection } from "@/lib/livekit";
+import { useWakeLock } from "@/hooks/use-wake-lock";
 import {
   HEARTBEAT_INTERVAL_MS,
   createStream,
@@ -28,6 +31,8 @@ export function StreamStudio({ userId }: { userId: string }) {
   const [mode, setMode] = useState<StreamMode>("camera");
   const [title, setTitle] = useState("");
   const [micEnabled, setMicEnabled] = useState(true);
+  const [reconnecting, setReconnecting] = useState(false);
+  useWakeLock(phase === "setup" || phase === "starting" || phase === "live");
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState<StreamRow | null>(null);
   const [viewerCount, setViewerCount] = useState(0);
@@ -159,7 +164,22 @@ export function StreamStudio({ userId }: { userId: string }) {
         participantName: `broadcaster_${created.id}`,
       });
 
-      const room = new Room({ adaptiveStream: false, dynacast: false });
+      // Bad-network tuning: 3 simulcast layers (720p/360p/180p), capped bitrate,
+      // dynacast pauses unused layers, and DTX/RED keep audio smooth on loss.
+      const room = new Room({
+        adaptiveStream: false,
+        dynacast: true,
+        publishDefaults: {
+          simulcast: true,
+          videoEncoding: { maxBitrate: 1_500_000, maxFramerate: 30 },
+          videoSimulcastLayers: [VideoPresets.h360, VideoPresets.h180],
+          screenShareEncoding: { maxBitrate: 1_500_000, maxFramerate: 15 },
+          degradationPreference: mode === "screen" ? "maintain-resolution" : "balanced",
+          dtx: true,
+          red: true,
+          audioPreset: AudioPresets.speech,
+        },
+      });
       roomRef.current = room;
 
       const updateViewers = () => {
@@ -172,6 +192,8 @@ export function StreamStudio({ userId }: { userId: string }) {
       };
       room.on(RoomEvent.ParticipantConnected, updateViewers);
       room.on(RoomEvent.ParticipantDisconnected, updateViewers);
+      room.on(RoomEvent.Reconnecting, () => setReconnecting(true));
+      room.on(RoomEvent.Reconnected, () => setReconnecting(false));
 
       await Promise.race([
         room.connect(serverUrl, token),
@@ -532,6 +554,11 @@ export function StreamStudio({ userId }: { userId: string }) {
             autoPlay
             className="size-full object-cover"
           />
+          {phase === "live" && reconnecting && (
+            <div className="absolute inset-x-0 bottom-3 z-10 mx-auto w-fit rounded-md bg-background/85 px-3 py-1.5 text-sm">
+              Reconnecting… your stream will resume automatically
+            </div>
+          )}
           {phase === "live" && (
             <>
               <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-md bg-live px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-live-foreground">
