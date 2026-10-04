@@ -6,6 +6,7 @@ import { Brand } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { getLiveKitConnection } from "@/lib/livekit";
 import { fetchStreamByShareId, isStale, type StreamRow } from "@/lib/streams";
+import { useWakeLock } from "@/hooks/use-wake-lock";
 
 export const Route = createFileRoute("/watch/$public_share_id")({
   head: () => ({
@@ -39,6 +40,8 @@ function WatchPage() {
   const roomRef = useRef<Room | null>(null);
   const joinedRef = useRef(false);
   const [paused, setPaused] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  useWakeLock(phase === "live" || phase === "connecting" || phase === "waiting");
 
   // 1. Load the stream record by its public share id.
   useEffect(() => {
@@ -102,7 +105,13 @@ function WatchPage() {
     room.on(RoomEvent.TrackSubscribed, (track) => attachTrack(track));
     room.on(RoomEvent.TrackPublished, () => scanTracks());
     room.on(RoomEvent.ParticipantConnected, () => scanTracks());
+    room.on(RoomEvent.Reconnecting, () => setReconnecting(true));
+    room.on(RoomEvent.Reconnected, () => {
+      setReconnecting(false);
+      scanTracks();
+    });
     room.on(RoomEvent.Disconnected, () => {
+      setReconnecting(false);
       if (cancelled) return;
       if (joinedRef.current) {
         setPhase("ended");
@@ -314,6 +323,11 @@ function WatchPage() {
             </div>
           )}
 
+          {phase === "live" && reconnecting && (
+            <div className="absolute inset-x-0 bottom-3 z-10 mx-auto w-fit rounded-md bg-background/85 px-3 py-1.5 text-sm">
+              Reconnecting…
+            </div>
+          )}
           {phase === "live" && (
             <>
               <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-md bg-live px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-live-foreground">

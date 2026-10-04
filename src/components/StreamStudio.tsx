@@ -554,6 +554,11 @@ export function StreamStudio({ userId }: { userId: string }) {
             autoPlay
             className="size-full object-cover"
           />
+          {phase === "live" && reconnecting && (
+            <div className="absolute inset-x-0 bottom-3 z-10 mx-auto w-fit rounded-md bg-background/85 px-3 py-1.5 text-sm">
+              Reconnecting… your stream will resume automatically
+            </div>
+          )}
           {phase === "live" && (
             <>
               <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-md bg-live px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-live-foreground">
