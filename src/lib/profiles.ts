@@ -5,7 +5,27 @@ export type Profile = {
   id: string;
   channel_slug: string;
   display_name: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  favorite_games: string[];
 };
+
+const PROFILE_COLUMNS = "id, channel_slug, display_name, avatar_url, bio, favorite_games";
+
+export async function updateMyProfile(
+  userId: string,
+  fields: { display_name?: string | null; avatar_url?: string | null; bio?: string | null; favorite_games?: string[] },
+): Promise<Profile> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .update(fields)
+    .eq("id", userId)
+    .select(PROFILE_COLUMNS)
+    .single();
+
+  if (error) throw error;
+  return data as Profile;
+}
 
 export function normalizeSlug(input: string) {
   return input
