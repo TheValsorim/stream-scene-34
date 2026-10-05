@@ -43,6 +43,21 @@ function LoginPage() {
     navigate({ to: "/live" });
   }
 
+  async function handleForgot() {
+    if (!email) {
+      toast.error("Enter your email first.");
+      return;
+    }
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success(`We sent a link to ${email} to set your password.`);
+  }
+
   async function handleGoogle() {
     const result = await lovable.auth.signInWithOAuth("google", {
       redirect_uri: window.location.origin,
@@ -89,6 +104,13 @@ function LoginPage() {
             <Button type="submit" className="h-11 w-full" disabled={busy}>
               {busy ? "Logging in…" : "Log in"}
             </Button>
+            <button
+              type="button"
+              onClick={handleForgot}
+              className="block w-full text-center text-sm text-muted-foreground underline underline-offset-4"
+            >
+              Forgot password? / Set a password
+            </button>
           </form>
 
           <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
