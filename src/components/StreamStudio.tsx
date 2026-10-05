@@ -37,6 +37,8 @@ export function StreamStudio({ userId }: { userId: string }) {
   const [stream, setStream] = useState<StreamRow | null>(null);
   const [viewerCount, setViewerCount] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [performanceMode, setPerformanceMode] = useState(true);
+  const [previewPaused, setPreviewPaused] = useState(false);
   const [facingMode, setFacingMode] = useState<"user" | "environment">("environment");
 
   const previewRef = useRef<HTMLVideoElement | null>(null);
@@ -92,7 +94,9 @@ export function StreamStudio({ userId }: { userId: string }) {
           );
         }
         return navigator.mediaDevices.getDisplayMedia({
-          video: { frameRate: { ideal: 30, max: 30 } },
+          video: performanceMode
+            ? { width: { max: 1280 }, height: { max: 720 }, frameRate: { ideal: 24, max: 30 } }
+            : { frameRate: { ideal: 30, max: 30 } },
           audio: true,
         });
       }
@@ -107,7 +111,7 @@ export function StreamStudio({ userId }: { userId: string }) {
         audio: true,
       });
     },
-    [],
+    [performanceMode],
   );
 
   function describeMediaError(err: unknown, nextMode: StreamMode) {
@@ -173,8 +177,11 @@ export function StreamStudio({ userId }: { userId: string }) {
           simulcast: true,
           videoEncoding: { maxBitrate: 1_500_000, maxFramerate: 30 },
           videoSimulcastLayers: [VideoPresets.h360, VideoPresets.h180],
-          screenShareEncoding: { maxBitrate: 1_500_000, maxFramerate: 15 },
-          degradationPreference: mode === "screen" ? "maintain-resolution" : "balanced",
+          screenShareEncoding: performanceMode
+            ? { maxBitrate: 1_200_000, maxFramerate: 24 }
+            : { maxBitrate: 2_500_000, maxFramerate: 30 },
+          degradationPreference:
+            mode === "screen" && !performanceMode ? "maintain-resolution" : "balanced",
           dtx: true,
           red: true,
           audioPreset: AudioPresets.speech,
@@ -552,8 +559,13 @@ export function StreamStudio({ userId }: { userId: string }) {
             playsInline
             muted
             autoPlay
-            className="size-full object-cover"
+            className={`size-full object-cover ${previewPaused ? "invisible" : ""}`}
           />
+          {previewPaused && (
+            <div className="absolute inset-0 grid place-items-center p-4 text-center text-sm text-muted-foreground">
+              Preview hidden to save your PC's power. Viewers still see your stream.
+            </div>
+          )}
           {phase === "live" && reconnecting && (
             <div className="absolute inset-x-0 bottom-3 z-10 mx-auto w-fit rounded-md bg-background/85 px-3 py-1.5 text-sm">
               Reconnecting… your stream will resume automatically
@@ -597,6 +609,22 @@ export function StreamStudio({ userId }: { userId: string }) {
                 {micEnabled ? <Mic className="mr-2 size-4" /> : <MicOff className="mr-2 size-4" />}
                 {micEnabled ? "Mute" : "Unmute"}
               </Button>
+              {mode === "screen" && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    const v = previewRef.current;
+                    if (v) {
+                      if (previewPaused) void v.play().catch(() => {});
+                      else v.pause();
+                    }
+                    setPreviewPaused((p) => !p);
+                  }}
+                >
+                  <Eye className="mr-2 size-4" />
+                  {previewPaused ? "Show preview" : "Hide preview"}
+                </Button>
+              )}
               {mode === "camera" && (
                 <>
                   <Button variant="secondary" onClick={handleSwitchCamera}>
@@ -628,6 +656,23 @@ export function StreamStudio({ userId }: { userId: string }) {
             <p className="mt-1 text-sm text-muted-foreground">
               Add a title, then go live. Your preview is on the left.
             </p>
+
+            {mode === "screen" && (
+              <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3">
+                <input
+                  type="checkbox"
+                  className="mt-1 size-4 accent-primary"
+                  checked={performanceMode}
+                  onChange={(e) => setPerformanceMode(e.target.checked)}
+                />
+                <span>
+                  <span className="block text-sm font-medium">Performance mode (for gaming)</span>
+                  <span className="block text-xs text-muted-foreground">
+                    720p at 24 fps with lower bitrate — leaves more power for your game. Turn off for sharper 1080p/30 fps.
+                  </span>
+                </span>
+              </label>
+            )}
 
             <div className="mt-5 space-y-2">
               <Label htmlFor="title">Stream title</Label>
