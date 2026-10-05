@@ -39,7 +39,7 @@ export function normalizeSlug(input: string) {
 export async function fetchMyProfile(userId: string, email?: string | null): Promise<Profile> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, channel_slug, display_name")
+    .select(PROFILE_COLUMNS)
     .eq("id", userId)
     .maybeSingle();
 
@@ -52,7 +52,7 @@ export async function fetchMyProfile(userId: string, email?: string | null): Pro
   const inserted = await supabase
     .from("profiles")
     .insert({ id: userId, channel_slug: candidate })
-    .select("id, channel_slug, display_name")
+    .select(PROFILE_COLUMNS)
     .single();
 
   if (inserted.error) {
@@ -60,7 +60,7 @@ export async function fetchMyProfile(userId: string, email?: string | null): Pro
     const retry = await supabase
       .from("profiles")
       .insert({ id: userId, channel_slug: candidate })
-      .select("id, channel_slug, display_name")
+      .select(PROFILE_COLUMNS)
       .single();
     if (retry.error) throw retry.error;
     return retry.data as Profile;
@@ -72,7 +72,7 @@ export async function fetchMyProfile(userId: string, email?: string | null): Pro
 export async function fetchProfileBySlug(slug: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, channel_slug, display_name")
+    .select(PROFILE_COLUMNS)
     .eq("channel_slug", slug)
     .maybeSingle();
 
@@ -85,7 +85,7 @@ export async function updateChannelSlug(userId: string, slug: string): Promise<P
     .from("profiles")
     .update({ channel_slug: slug })
     .eq("id", userId)
-    .select("id, channel_slug, display_name")
+    .select(PROFILE_COLUMNS)
     .single();
 
   if (error) throw error;
@@ -96,7 +96,7 @@ export async function updateChannelSlug(userId: string, slug: string): Promise<P
 export async function fetchProfiles(): Promise<Profile[]> {
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, channel_slug, display_name")
+    .select(PROFILE_COLUMNS)
     .order("created_at", { ascending: true })
     .limit(200);
 
