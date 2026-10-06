@@ -127,6 +127,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_profile_by_slug: {
+        Args: { _slug: string }
+        Returns: {
+          avatar_url: string
+          bio: string
+          channel_slug: string
+          display_name: string
+          favorite_games: string[]
+          id: string
+        }[]
+      }
+      get_public_profiles: {
+        Args: never
+        Returns: {
+          avatar_url: string
+          bio: string
+          channel_slug: string
+          display_name: string
+          favorite_games: string[]
+          id: string
+        }[]
+      }
       slugify_handle: { Args: { _input: string }; Returns: string }
     }
     Enums: {

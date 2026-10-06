@@ -15,6 +15,13 @@
       "when": 1791326502068,
       "tag": "0001_drop_unused_avatar_storage_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791326620860,
+      "tag": "0002_profiles_public_read_via_functions",
+      "breakpoints": true
     }
   ]
 }
