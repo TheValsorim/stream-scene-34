@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AppHeader } from "@/components/AppHeader";
 import { StreamStudio } from "@/components/StreamStudio";
 import { ChannelLink } from "@/components/ChannelLink";
+import { ProfileSettings } from "@/components/ProfileSettings";
 import { TroubleshootHelper } from "@/components/TroubleshootHelper";
 import { useSession } from "@/hooks/use-session";
 
@@ -38,8 +39,9 @@ function StreamPage() {
         </p>
 
         {user && (
-          <div className="mt-6">
+          <div className="mt-6 space-y-6">
             <ChannelLink userId={user.id} email={user.email ?? null} />
+            <ProfileSettings userId={user.id} email={user.email ?? null} />
           </div>
         )}
 
