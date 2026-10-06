@@ -15,6 +15,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as AuthenticatedLiveRouteImport } from './routes/_authenticated/live'
+import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedStreamRouteImport } from './routes/_authenticated/stream'
 import { Route as CSlugRouteImport } from './routes/c.$slug'
 import { Route as WatchPublic_share_idRouteImport } from './routes/watch.$public_share_id'
@@ -48,6 +49,11 @@ const AuthenticatedLiveRoute = AuthenticatedLiveRouteImport.update({
   path: '/live',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedStreamRoute = AuthenticatedStreamRouteImport.update({
   id: '/stream',
   path: '/stream',
@@ -70,6 +76,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/live': typeof AuthenticatedLiveRoute
+  '/profile': typeof AuthenticatedProfileRoute
   '/stream': typeof AuthenticatedStreamRoute
   '/c/$slug': typeof CSlugRoute
   '/watch/$public_share_id': typeof WatchPublic_share_idRoute
@@ -80,6 +87,7 @@ export interface FileRoutesByTo {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/live': typeof AuthenticatedLiveRoute
+  '/profile': typeof AuthenticatedProfileRoute
   '/stream': typeof AuthenticatedStreamRoute
   '/c/$slug': typeof CSlugRoute
   '/watch/$public_share_id': typeof WatchPublic_share_idRoute
@@ -92,6 +100,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/_authenticated/live': typeof AuthenticatedLiveRoute
+  '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/stream': typeof AuthenticatedStreamRoute
   '/c/$slug': typeof CSlugRoute
   '/watch/$public_share_id': typeof WatchPublic_share_idRoute
@@ -104,6 +113,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/live'
+    | '/profile'
     | '/stream'
     | '/c/$slug'
     | '/watch/$public_share_id'
@@ -114,6 +124,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/live'
+    | '/profile'
     | '/stream'
     | '/c/$slug'
     | '/watch/$public_share_id'
@@ -125,6 +136,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/_authenticated/live'
+    | '/_authenticated/profile'
     | '/_authenticated/stream'
     | '/c/$slug'
     | '/watch/$public_share_id'
@@ -184,6 +196,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedLiveRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/profile': {
+      id: '/_authenticated/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AuthenticatedProfileRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/stream': {
       id: '/_authenticated/stream'
       path: '/stream'
@@ -210,11 +229,13 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedLiveRoute: typeof AuthenticatedLiveRoute
+  AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedStreamRoute: typeof AuthenticatedStreamRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedLiveRoute: AuthenticatedLiveRoute,
+  AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedStreamRoute: AuthenticatedStreamRoute,
 }
 
