@@ -75,9 +75,10 @@ export function AppHeader() {
                         My profile
                       </Link>
                     </DropdownMenuItem>
-                    <LogOut className="mr-2 size-4" />
-                    Sign out
-                  </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleSignOut}>
+                      <LogOut className="mr-2 size-4" />
+                      Sign out
+                    </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </>
