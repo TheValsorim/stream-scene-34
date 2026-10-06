@@ -92,10 +92,32 @@ function ChannelPage() {
           <h1 className="mt-6 text-2xl font-semibold">Checking the channel…</h1>
         ) : (
           <>
+            {profile?.avatar_url && (
+              <img
+                src={profile.avatar_url}
+                alt=""
+                className="mt-6 size-24 rounded-full border border-border object-cover"
+              />
+            )}
             <h1 className="mt-6 text-2xl font-semibold">
               {profile?.display_name ?? `@${slug}`} is not live right now
             </h1>
-            <p className="mt-2 text-sm text-muted-foreground">
+            {profile?.bio && (
+              <p className="mt-3 max-w-sm text-sm text-muted-foreground">{profile.bio}</p>
+            )}
+            {profile && profile.favorite_games.length > 0 && (
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                {profile.favorite_games.map((game) => (
+                  <span
+                    key={game}
+                    className="rounded-full border border-border bg-secondary px-3 py-1 text-xs"
+                  >
+                    {game}
+                  </span>
+                ))}
+              </div>
+            )}
+            <p className="mt-4 text-sm text-muted-foreground">
               Keep this page open — it starts playing automatically the moment the stream begins.
             </p>
           </>
