@@ -70,14 +70,9 @@ export async function fetchMyProfile(userId: string, email?: string | null): Pro
 }
 
 export async function fetchProfileBySlug(slug: string): Promise<Profile | null> {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select(PROFILE_COLUMNS)
-    .eq("channel_slug", slug)
-    .maybeSingle();
-
+  const { data, error } = await supabase.rpc("get_profile_by_slug", { _slug: slug });
   if (error) throw error;
-  return (data as Profile | null) ?? null;
+  return ((data as Profile[] | null) ?? [])[0] ?? null;
 }
 
 export async function updateChannelSlug(userId: string, slug: string): Promise<Profile> {
@@ -94,14 +89,9 @@ export async function updateChannelSlug(userId: string, slug: string): Promise<P
 
 /** All registered users' channel profiles, oldest first. */
 export async function fetchProfiles(): Promise<Profile[]> {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select(PROFILE_COLUMNS)
-    .order("created_at", { ascending: true })
-    .limit(200);
-
+  const { data, error } = await supabase.rpc("get_public_profiles");
   if (error) throw error;
-  return (data as Profile[]) ?? [];
+  return (data as Profile[] | null) ?? [];
 }
 
 /** The channel's currently live stream, if any. */
