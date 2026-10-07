@@ -84,6 +84,11 @@ export function AppHeader() {
             </>
           ) : (
             <>
+              <Link to="/live">
+                <Button variant="ghost" size="sm">
+                  Live
+                </Button>
+              </Link>
               <Link to="/login">
                 <Button variant="ghost" size="sm">
                   Log in
