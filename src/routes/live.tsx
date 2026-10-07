@@ -8,7 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { fetchLiveStreams, type StreamRow } from "@/lib/streams";
 import { fetchProfiles, type Profile } from "@/lib/profiles";
 
-export const Route = createFileRoute("/_authenticated/live")({
+export const Route = createFileRoute("/live")({
   head: () => ({
     meta: [
       { title: "Live now — ArenaHub" },
