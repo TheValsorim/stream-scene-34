@@ -6,6 +6,7 @@ import { Brand } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { getLiveKitConnection } from "@/lib/livekit";
 import { fetchStreamByShareId, isStale, type StreamRow } from "@/lib/streams";
+import { LiveReactions } from "@/components/LiveReactions";
 import { useWakeLock } from "@/hooks/use-wake-lock";
 
 export const Route = createFileRoute("/watch/$public_share_id")({
@@ -323,6 +324,7 @@ function WatchPage() {
             </div>
           )}
 
+          {phase === "live" && stream && <LiveReactions streamId={stream.id} canSend />}
           {phase === "live" && reconnecting && (
             <div className="absolute inset-x-0 bottom-3 z-10 mx-auto w-fit rounded-md bg-background/85 px-3 py-1.5 text-sm">
               Reconnecting…

@@ -10,6 +10,7 @@ import {
 } from "livekit-client";
 import { Camera, Check, Copy, Eye, Mic, MicOff, Monitor, RefreshCw, Square } from "lucide-react";
 import { toast } from "sonner";
+import { LiveReactions } from "@/components/LiveReactions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -566,6 +567,7 @@ export function StreamStudio({ userId }: { userId: string }) {
               Preview hidden to save your PC's power. Viewers still see your stream.
             </div>
           )}
+          {phase === "live" && stream && <LiveReactions streamId={stream.id} canSend={false} />}
           {phase === "live" && reconnecting && (
             <div className="absolute inset-x-0 bottom-3 z-10 mx-auto w-fit rounded-md bg-background/85 px-3 py-1.5 text-sm">
               Reconnecting… your stream will resume automatically
