@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
-import { Eye, Monitor, Camera, Radio, Users } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Eye, Monitor, Camera, Radio, Users, Search, X } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -51,9 +51,24 @@ function LivePage() {
     };
   }, [refetch]);
 
-  const streams = data ?? [];
-  const liveCreatorIds = new Set(streams.map((s) => s.creator_id));
-  const channels = profiles ?? [];
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const allStreams = data ?? [];
+  const allChannels = profiles ?? [];
+  const liveCreatorIds = new Set(allStreams.map((s) => s.creator_id));
+  const profileById = new Map(allChannels.map((p) => [p.id, p]));
+  const matchProfile = (p?: Profile) =>
+    !!p &&
+    [p.display_name ?? "", p.channel_slug, p.bio ?? "", ...(p.favorite_games ?? [])].some((v) =>
+      v.toLowerCase().includes(q),
+    );
+  const streams = q
+    ? allStreams.filter(
+        (s) => s.title.toLowerCase().includes(q) || matchProfile(profileById.get(s.creator_id)),
+      )
+    : allStreams;
+  const channels = q ? allChannels.filter((p) => matchProfile(p)) : allChannels;
+  const noResults = q && streams.length === 0 && channels.length === 0;
 
   return (
     <div className="min-h-screen">
@@ -76,12 +91,47 @@ function LivePage() {
           </Link>
         </div>
 
-        {isLoading ? (
+        <div className="relative mt-6">
+          <Search className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search streamers or games…"
+            aria-label="Search streamers or games"
+            className="h-12 w-full rounded-xl border border-border bg-card pl-12 pr-12 text-base outline-none focus:border-primary"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-5" />
+            </button>
+          )}
+        </div>
+
+        {noResults && (
+          <div className="mt-8 rounded-2xl border border-border bg-card p-10 text-center">
+            <p className="text-sm text-muted-foreground">
+              No streamers or games found for "{query.trim()}".
+            </p>
+            <Button variant="outline" className="mt-4" onClick={() => setQuery("")}>
+              Clear search
+            </Button>
+          </div>
+        )}
+
+        {noResults ? null : isLoading ? (
           <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {[0, 1, 2].map((i) => (
               <div key={i} className="h-56 animate-pulse rounded-2xl border border-border bg-card" />
             ))}
           </div>
+        ) : streams.length === 0 && q ? (
+          <p className="mt-8 text-sm text-muted-foreground">No live streams match your search.</p>
         ) : streams.length === 0 ? (
           <div className="mt-10 rounded-2xl border border-border bg-card p-12 text-center">
             <h2 className="text-lg font-semibold">No live streams yet</h2>
@@ -100,6 +150,7 @@ function LivePage() {
           </div>
         )}
 
+        {!noResults && (
         <section className="mt-14">
           <div className="flex items-center gap-2">
             <Users className="size-5 text-muted-foreground" />
@@ -123,6 +174,7 @@ function LivePage() {
             </div>
           )}
         </section>
+        )}
       </main>
     </div>
   );
@@ -142,6 +194,13 @@ function ChannelCard({ profile, isLive }: { profile: Profile; isLive: boolean })
       <span className="min-w-0 flex-1">
         <span className="block truncate font-medium group-hover:text-primary">{name}</span>
         <span className="block truncate text-xs text-muted-foreground">@{profile.channel_slug}</span>
+        {profile.favorite_games?.length > 0 && (
+          <span className="mt-1 flex flex-wrap gap-1">
+            {profile.favorite_games.slice(0, 3).map((g) => (
+              <span key={g} className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground">{g}</span>
+            ))}
+          </span>
+        )}
       </span>
       {isLive && (
         <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-live px-2 py-1 text-xs font-semibold uppercase tracking-wide text-live-foreground">
