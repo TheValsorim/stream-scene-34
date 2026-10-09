@@ -130,6 +130,8 @@ function LivePage() {
               <div key={i} className="h-56 animate-pulse rounded-2xl border border-border bg-card" />
             ))}
           </div>
+        ) : streams.length === 0 && q ? (
+          <p className="mt-8 text-sm text-muted-foreground">No live streams match your search.</p>
         ) : streams.length === 0 ? (
           <div className="mt-10 rounded-2xl border border-border bg-card p-12 text-center">
             <h2 className="text-lg font-semibold">No live streams yet</h2>
@@ -148,6 +150,7 @@ function LivePage() {
           </div>
         )}
 
+        {!noResults && (
         <section className="mt-14">
           <div className="flex items-center gap-2">
             <Users className="size-5 text-muted-foreground" />
@@ -171,6 +174,7 @@ function LivePage() {
             </div>
           )}
         </section>
+        )}
       </main>
     </div>
   );
@@ -190,6 +194,13 @@ function ChannelCard({ profile, isLive }: { profile: Profile; isLive: boolean })
       <span className="min-w-0 flex-1">
         <span className="block truncate font-medium group-hover:text-primary">{name}</span>
         <span className="block truncate text-xs text-muted-foreground">@{profile.channel_slug}</span>
+        {profile.favorite_games?.length > 0 && (
+          <span className="mt-1 flex flex-wrap gap-1">
+            {profile.favorite_games.slice(0, 3).map((g) => (
+              <span key={g} className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-secondary-foreground">{g}</span>
+            ))}
+          </span>
+        )}
       </span>
       {isLive && (
         <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-live px-2 py-1 text-xs font-semibold uppercase tracking-wide text-live-foreground">
