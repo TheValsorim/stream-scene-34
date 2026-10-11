@@ -192,7 +192,12 @@ function ChannelCard({ profile, isLive }: { profile: Profile; isLive: boolean })
         {name.charAt(0)}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium group-hover:text-primary">{name}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="truncate font-medium group-hover:text-primary">{name}</span>
+          {profile.is_featured && (
+            <span className="shrink-0 rounded bg-accent px-1.5 py-0.5 text-[10px] font-semibold uppercase text-accent-foreground">Featured</span>
+          )}
+        </span>
         <span className="block truncate text-xs text-muted-foreground">@{profile.channel_slug}</span>
         {profile.favorite_games?.length > 0 && (
           <span className="mt-1 flex flex-wrap gap-1">
