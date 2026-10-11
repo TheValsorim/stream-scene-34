@@ -22,6 +22,13 @@
       "when": 1791326620860,
       "tag": "0002_profiles_public_read_via_functions",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791713624687,
+      "tag": "0003_admin_panel",
+      "breakpoints": true
     }
   ]
 }
