@@ -8,6 +8,7 @@ export type Profile = {
   avatar_url: string | null;
   bio: string | null;
   favorite_games: string[];
+  is_featured?: boolean;
 };
 
 const PROFILE_COLUMNS = "id, channel_slug, display_name, avatar_url, bio, favorite_games";

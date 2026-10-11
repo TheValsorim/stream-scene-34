@@ -23,6 +23,8 @@ export type Database = {
           display_name: string | null
           favorite_games: string[]
           id: string
+          is_banned: boolean
+          is_featured: boolean
           updated_at: string
         }
         Insert: {
@@ -33,6 +35,8 @@ export type Database = {
           display_name?: string | null
           favorite_games?: string[]
           id: string
+          is_banned?: boolean
+          is_featured?: boolean
           updated_at?: string
         }
         Update: {
@@ -43,6 +47,8 @@ export type Database = {
           display_name?: string | null
           favorite_games?: string[]
           id?: string
+          is_banned?: boolean
+          is_featured?: boolean
           updated_at?: string
         }
         Relationships: []
@@ -61,6 +67,7 @@ export type Database = {
           last_heartbeat_at: string
           livekit_room_name: string
           microphone_enabled: boolean
+          peak_viewers: number
           public_share_id: string
           public_watch_url: string | null
           started_at: string
@@ -85,6 +92,7 @@ export type Database = {
           last_heartbeat_at?: string
           livekit_room_name: string
           microphone_enabled?: boolean
+          peak_viewers?: number
           public_share_id: string
           public_watch_url?: string | null
           started_at?: string
@@ -109,6 +117,7 @@ export type Database = {
           last_heartbeat_at?: string
           livekit_room_name?: string
           microphone_enabled?: boolean
+          peak_viewers?: number
           public_share_id?: string
           public_watch_url?: string | null
           started_at?: string
@@ -122,11 +131,78 @@ export type Database = {
         }
         Relationships: []
       }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      admin_end_stream: { Args: { _stream_id: string }; Returns: undefined }
+      admin_list_streams: {
+        Args: never
+        Returns: {
+          channel_slug: string
+          creator_id: string
+          device_type: string
+          display_name: string
+          ended_at: string
+          ended_reason: string
+          id: string
+          last_heartbeat_at: string
+          peak_viewers: number
+          public_share_id: string
+          started_at: string
+          status: string
+          stream_health: string
+          stream_mode: string
+          title: string
+          viewer_count: number
+        }[]
+      }
+      admin_list_users: {
+        Args: never
+        Returns: {
+          avatar_url: string
+          channel_slug: string
+          created_at: string
+          display_name: string
+          email: string
+          favorite_games: string[]
+          id: string
+          is_admin: boolean
+          is_banned: boolean
+          is_featured: boolean
+          last_sign_in_at: string
+          max_viewers: number
+          stream_count: number
+          total_minutes: number
+        }[]
+      }
+      admin_set_user_flags: {
+        Args: { _is_banned: boolean; _is_featured: boolean; _user_id: string }
+        Returns: undefined
+      }
+      admin_update_profile: {
+        Args: { _channel_slug: string; _display_name: string; _user_id: string }
+        Returns: undefined
+      }
       get_profile_by_slug: {
         Args: { _slug: string }
         Returns: {
@@ -147,12 +223,20 @@ export type Database = {
           display_name: string
           favorite_games: string[]
           id: string
+          is_featured: boolean
         }[]
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
       }
       slugify_handle: { Args: { _input: string }; Returns: string }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "moderator" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -279,6 +363,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "moderator", "user"],
+    },
   },
 } as const
