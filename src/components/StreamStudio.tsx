@@ -27,12 +27,20 @@ import {
 
 type Phase = "choose" | "setup" | "starting" | "live" | "ended";
 
+type OutgoingVideo = { mbps: number; width: number; height: number; fps: number; limitation: string | null };
+type VideoStatsEntry = {
+  type: string; kind?: string; mediaType?: string; bytesSent?: number;
+  frameWidth?: number; frameHeight?: number; framesPerSecond?: number; qualityLimitationReason?: string;
+};
+
 export function StreamStudio({ userId }: { userId: string }) {
   const [phase, setPhase] = useState<Phase>("choose");
   const [mode, setMode] = useState<StreamMode>("camera");
   const [title, setTitle] = useState("");
   const [micEnabled, setMicEnabled] = useState(true);
   const [reconnecting, setReconnecting] = useState(false);
+  const [cameraInterrupted, setCameraInterrupted] = useState(false);
+  const [outgoingVideo, setOutgoingVideo] = useState<OutgoingVideo | null>(null);
   useWakeLock(phase === "setup" || phase === "starting" || phase === "live");
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState<StreamRow | null>(null);
@@ -51,6 +59,9 @@ export function StreamStudio({ userId }: { userId: string }) {
   const streamIdRef = useRef<string | null>(null);
   const flippingRef = useRef(false);
   const reconnectingRef = useRef(false);
+  const recoveryInProgressRef = useRef(false);
+  const lastRecoveryAttemptRef = useRef(0);
+  const lastSenderSampleRef = useRef<{ at: number; bytes: number } | null>(null);
 
   const attachPreview = useCallback((ms: MediaStream) => {
     mediaStreamRef.current = ms;
@@ -176,7 +187,8 @@ export function StreamStudio({ userId }: { userId: string }) {
         dynacast: true,
         publishDefaults: {
           simulcast: true,
-          videoEncoding: { maxBitrate: 1_500_000, maxFramerate: 30 },
+          // Allow sharper 720p camera video. WebRTC adapts below this cap on weak links.
+          videoEncoding: { maxBitrate: mode === "camera" ? 2_400_000 : 1_500_000, maxFramerate: 30 },
           videoSimulcastLayers: [VideoPresets.h360, VideoPresets.h180],
           screenShareEncoding: performanceMode
             ? { maxBitrate: 1_200_000, maxFramerate: 24 }
@@ -302,45 +314,140 @@ export function StreamStudio({ userId }: { userId: string }) {
     };
   }, [phase, stream, viewerCount]);
 
-  // Phones pause or kill the camera when you leave the browser. When the page
-  // comes back, revive the camera if needed and restart the preview.
+  // iOS battery alerts can interrupt capture without a page visibility change.
+  // Retry only after the page is visible, and keep manual Reconnect camera available.
   useEffect(() => {
-    if (phase === "choose" || phase === "ended") return;
+    if (mode !== "camera" || (phase !== "setup" && phase !== "starting" && phase !== "live")) return;
+    let cancelled = false;
+    let pending: ReturnType<typeof setTimeout> | null = null;
     const revive = async () => {
-      if (document.visibilityState !== "visible" || mode !== "camera") return;
-      const ms = mediaStreamRef.current;
-      const audio = ms?.getAudioTracks() ?? [];
-      let video = videoTrackRef.current?.mediaStreamTrack ?? ms?.getVideoTracks()[0];
+      if (cancelled || document.visibilityState !== "visible" || recoveryInProgressRef.current) return;
+      const media = mediaStreamRef.current;
+      const publishedVideo = videoTrackRef.current;
+      const publishedAudio = audioTrackRef.current;
+      const video = publishedVideo?.mediaStreamTrack ?? media?.getVideoTracks()[0];
+      const audio = publishedAudio?.mediaStreamTrack ?? media?.getAudioTracks()[0];
+      const videoBroken = !video || video.readyState === "ended" || video.muted;
+      const audioBroken = micEnabled && !!audio && (audio.readyState === "ended" || audio.muted);
+      const missingPreview = !!previewRef.current && !previewRef.current.srcObject;
+      if (!videoBroken && !audioBroken && !missingPreview) {
+        if (previewRef.current?.paused) void previewRef.current.play().catch(() => {});
+        setCameraInterrupted(false);
+        return;
+      }
+      // Avoid rapid retries while Safari still owns the interrupted capture device.
+      if (Date.now() - lastRecoveryAttemptRef.current < 5_000) return;
+      lastRecoveryAttemptRef.current = Date.now();
+      recoveryInProgressRef.current = true;
+      setCameraInterrupted(true);
       try {
-        if (!video || video.readyState === "ended" || video.muted) {
-          if (videoTrackRef.current) {
-            await videoTrackRef.current.restartTrack({
-              facingMode,
-              resolution: { width: 1280, height: 720 },
-              frameRate: 30,
+        let freshVideo = video;
+        if (videoBroken) {
+          if (publishedVideo) {
+            await publishedVideo.restartTrack({
+              facingMode, resolution: { width: 1280, height: 720 }, frameRate: 30,
             });
-            video = videoTrackRef.current.mediaStreamTrack;
+            freshVideo = publishedVideo.mediaStreamTrack;
           } else {
-            const fresh = await navigator.mediaDevices.getUserMedia({
+            media?.getVideoTracks().forEach((t) => t.stop());
+            const capture = await navigator.mediaDevices.getUserMedia({
               video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
               audio: false,
             });
-            video = fresh.getVideoTracks()[0];
+            freshVideo = capture.getVideoTracks()[0];
           }
         }
-        if (video) attachPreview(new MediaStream([video, ...audio]));
-      } catch (err) {
-        toast.error(describeMediaError(err, "camera"));
+        if (audioBroken && publishedAudio) await publishedAudio.restartTrack();
+        const freshAudio = publishedAudio?.mediaStreamTrack ?? audio;
+        if (freshVideo && !cancelled) {
+          attachPreview(new MediaStream([
+            freshVideo,
+            ...(freshAudio && freshAudio.readyState === "live" ? [freshAudio] : []),
+          ]));
+          setCameraInterrupted(false);
+        }
+      } catch {
+        // Display a recovery warning, don't mark a temporary OS interruption as stream ended.
+        if (!cancelled) setCameraInterrupted(true);
+      } finally {
+        recoveryInProgressRef.current = false;
       }
     };
-    const onVisible = () => void setTimeout(revive, 300);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("pageshow", onVisible);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("pageshow", onVisible);
+    const schedule = () => {
+      if (pending) clearTimeout(pending);
+      pending = setTimeout(() => void revive(), 900);
     };
-  }, [phase, mode, facingMode, attachPreview]);
+    const video = videoTrackRef.current?.mediaStreamTrack ?? mediaStreamRef.current?.getVideoTracks()[0];
+    const audio = audioTrackRef.current?.mediaStreamTrack ?? mediaStreamRef.current?.getAudioTracks()[0];
+    for (const track of [video, audio]) {
+      track?.addEventListener("mute", schedule);
+      track?.addEventListener("ended", schedule);
+    }
+    document.addEventListener("visibilitychange", schedule);
+    window.addEventListener("focus", schedule);
+    window.addEventListener("pageshow", schedule);
+    const interval = setInterval(() => void revive(), 4_000);
+    void revive();
+    return () => {
+      cancelled = true;
+      if (pending) clearTimeout(pending);
+      clearInterval(interval);
+      for (const track of [video, audio]) {
+        track?.removeEventListener("mute", schedule);
+        track?.removeEventListener("ended", schedule);
+      }
+      document.removeEventListener("visibilitychange", schedule);
+      window.removeEventListener("focus", schedule);
+      window.removeEventListener("pageshow", schedule);
+    };
+  }, [phase, mode, facingMode, micEnabled, attachPreview]);
+
+  // Encoder statistics reveal whether poor quality is source, network, or device related.
+  useEffect(() => {
+    if (phase !== "live") {
+      lastSenderSampleRef.current = null;
+      setOutgoingVideo(null);
+      return;
+    }
+    let cancelled = false;
+    const sample = async () => {
+      try {
+        const report = await videoTrackRef.current?.getRTCStatsReport();
+        if (!report || cancelled) return;
+        let bytes = 0, width = 0, height = 0, fps = 0;
+        let limitation: string | null = null;
+        report.forEach((raw) => {
+          const stat = raw as VideoStatsEntry;
+          if (stat.type !== "outbound-rtp" || (stat.kind !== "video" && stat.mediaType !== "video")) return;
+          bytes += stat.bytesSent ?? 0;
+          if ((stat.frameWidth ?? 0) > width) {
+            width = stat.frameWidth ?? 0;
+            height = stat.frameHeight ?? 0;
+          }
+          fps = Math.max(fps, stat.framesPerSecond ?? 0);
+          if (stat.qualityLimitationReason && stat.qualityLimitationReason !== "none") {
+            limitation = stat.qualityLimitationReason;
+          }
+        });
+        if (!bytes) return;
+        const now = Date.now();
+        const previous = lastSenderSampleRef.current;
+        lastSenderSampleRef.current = { at: now, bytes };
+        if (!previous || bytes < previous.bytes || now - previous.at < 1000) return;
+        const mbps = (8 * (bytes - previous.bytes)) / ((now - previous.at) * 1000);
+        if (!cancelled) setOutgoingVideo({ mbps, width, height, fps, limitation });
+      } catch {
+        // Older browser versions may not provide WebRTC stats.
+      }
+    };
+    void sample();
+    const interval = setInterval(() => void sample(), 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      lastSenderSampleRef.current = null;
+    };
+  }, [phase]);
 
   // Stop capture if the component unmounts.
   useEffect(() => stopMedia, [stopMedia]);
@@ -479,6 +586,7 @@ export function StreamStudio({ userId }: { userId: string }) {
         await videoTrackRef.current.replaceTrack(video);
       }
       attachPreview(new MediaStream([video, ...audioTracks]));
+      setCameraInterrupted(false);
       toast.success("Camera reconnected");
     } catch (err) {
       toast.error(describeMediaError(err, "camera"));
@@ -509,6 +617,7 @@ export function StreamStudio({ userId }: { userId: string }) {
   }
 
   function handleStreamAgain() {
+    setCameraInterrupted(false);
     setStream(null);
     streamIdRef.current = null;
     setTitle("");
@@ -568,6 +677,11 @@ export function StreamStudio({ userId }: { userId: string }) {
             </div>
           )}
           {phase === "live" && stream && <LiveReactions streamId={stream.id} canSend={false} />}
+          {phase === "live" && mode === "camera" && cameraInterrupted && (
+            <div role="status" className="absolute inset-x-3 bottom-3 z-20 rounded-lg bg-background/95 p-3 text-center text-sm">
+              Camera or microphone interrupted. Trying to recover. Tap Reconnect camera below if needed.
+            </div>
+          )}
           {phase === "live" && reconnecting && (
             <div className="absolute inset-x-0 bottom-3 z-10 mx-auto w-fit rounded-md bg-background/85 px-3 py-1.5 text-sm">
               Reconnecting… your stream will resume automatically
@@ -605,6 +719,14 @@ export function StreamStudio({ userId }: { userId: string }) {
                 Anyone with this link can watch — no account needed.
               </p>
             </div>
+            {outgoingVideo && (
+              <div className="mt-4 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
+                Outgoing video: {outgoingVideo.mbps.toFixed(2)} Mbps
+                {outgoingVideo.width > 0 ? ` · ${outgoingVideo.width}×${outgoingVideo.height}` : ""}
+                {outgoingVideo.fps > 0 ? ` · ${Math.round(outgoingVideo.fps)} FPS` : ""}
+                {outgoingVideo.limitation ? ` · Limited by ${outgoingVideo.limitation}` : ""}
+              </div>
+            )
 
             <div className="mt-6 flex flex-wrap gap-2">
               <Button variant="secondary" onClick={handleToggleMic}>
