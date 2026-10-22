@@ -682,7 +682,7 @@ export function StreamStudio({ userId }: { userId: string }) {
                 {outgoingVideo.fps > 0 ? ` · ${Math.round(outgoingVideo.fps)} FPS` : ""}
                 {outgoingVideo.limitation ? ` · limited by ${outgoingVideo.limitation}` : ""}
               </div>
-            )
+            )}
 
             <div className="mt-6 flex flex-wrap gap-2">
               <Button variant="secondary" onClick={handleToggleMic}>
