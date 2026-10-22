@@ -27,10 +27,17 @@ import {
 
 type Phase = "choose" | "setup" | "starting" | "live" | "ended";
 
-type OutgoingVideo = { mbps: number; width: number; height: number; fps: number; limitation: string | null };
-type VideoStatsEntry = {
-  type: string; kind?: string; mediaType?: string; bytesSent?: number;
-  frameWidth?: number; frameHeight?: number; framesPerSecond?: number; qualityLimitationReason?: string;
+/** Outgoing WebRTC sender stats (when supported by the broadcaster's browser). */
+type OutgoingVideo = { bitrateMbps: number; width: number; height: number; fps: number; limitation: string | null };
+type OutboundVideoStats = {
+  type: string;
+  kind?: string;
+  mediaType?: string;
+  bytesSent?: number;
+  frameWidth?: number;
+  frameHeight?: number;
+  framesPerSecond?: number;
+  qualityLimitationReason?: string;
 };
 
 export function StreamStudio({ userId }: { userId: string }) {
@@ -39,7 +46,6 @@ export function StreamStudio({ userId }: { userId: string }) {
   const [title, setTitle] = useState("");
   const [micEnabled, setMicEnabled] = useState(true);
   const [reconnecting, setReconnecting] = useState(false);
-  const [cameraInterrupted, setCameraInterrupted] = useState(false);
   const [outgoingVideo, setOutgoingVideo] = useState<OutgoingVideo | null>(null);
   useWakeLock(phase === "setup" || phase === "starting" || phase === "live");
   const [error, setError] = useState<string | null>(null);
@@ -59,9 +65,7 @@ export function StreamStudio({ userId }: { userId: string }) {
   const streamIdRef = useRef<string | null>(null);
   const flippingRef = useRef(false);
   const reconnectingRef = useRef(false);
-  const recoveryInProgressRef = useRef(false);
-  const lastRecoveryAttemptRef = useRef(0);
-  const lastSenderSampleRef = useRef<{ at: number; bytes: number } | null>(null);
+  const senderStatsRef = useRef<{ measuredAt: number; bytesSent: number } | null>(null);
 
   const attachPreview = useCallback((ms: MediaStream) => {
     mediaStreamRef.current = ms;
@@ -187,7 +191,7 @@ export function StreamStudio({ userId }: { userId: string }) {
         dynacast: true,
         publishDefaults: {
           simulcast: true,
-          // Allow sharper 720p camera video. WebRTC adapts below this cap on weak links.
+          // Improve detail at 720p/30. WebRTC still adapts to available upload capacity.
           videoEncoding: { maxBitrate: mode === "camera" ? 2_400_000 : 1_500_000, maxFramerate: 30 },
           videoSimulcastLayers: [VideoPresets.h360, VideoPresets.h180],
           screenShareEncoding: performanceMode
@@ -314,112 +318,64 @@ export function StreamStudio({ userId }: { userId: string }) {
     };
   }, [phase, stream, viewerCount]);
 
-  // iOS battery alerts can interrupt capture without a page visibility change.
-  // Retry only after the page is visible, and keep manual Reconnect camera available.
+  // Phones pause or kill the camera when you leave the browser. When the page
+  // comes back, revive the camera if needed and restart the preview.
   useEffect(() => {
-    if (mode !== "camera" || (phase !== "setup" && phase !== "starting" && phase !== "live")) return;
-    let cancelled = false;
-    let pending: ReturnType<typeof setTimeout> | null = null;
+    if (phase === "choose" || phase === "ended") return;
     const revive = async () => {
-      if (cancelled || document.visibilityState !== "visible" || recoveryInProgressRef.current) return;
-      const media = mediaStreamRef.current;
-      const publishedVideo = videoTrackRef.current;
-      const publishedAudio = audioTrackRef.current;
-      const video = publishedVideo?.mediaStreamTrack ?? media?.getVideoTracks()[0];
-      const audio = publishedAudio?.mediaStreamTrack ?? media?.getAudioTracks()[0];
-      const videoBroken = !video || video.readyState === "ended" || video.muted;
-      const audioBroken = micEnabled && !!audio && (audio.readyState === "ended" || audio.muted);
-      const missingPreview = !!previewRef.current && !previewRef.current.srcObject;
-      if (!videoBroken && !audioBroken && !missingPreview) {
-        if (previewRef.current?.paused) void previewRef.current.play().catch(() => {});
-        setCameraInterrupted(false);
-        return;
-      }
-      // Avoid rapid retries while Safari still owns the interrupted capture device.
-      if (Date.now() - lastRecoveryAttemptRef.current < 5_000) return;
-      lastRecoveryAttemptRef.current = Date.now();
-      recoveryInProgressRef.current = true;
-      setCameraInterrupted(true);
+      if (document.visibilityState !== "visible" || mode !== "camera") return;
+      const ms = mediaStreamRef.current;
+      const audio = ms?.getAudioTracks() ?? [];
+      let video = videoTrackRef.current?.mediaStreamTrack ?? ms?.getVideoTracks()[0];
       try {
-        let freshVideo = video;
-        if (videoBroken) {
-          if (publishedVideo) {
-            await publishedVideo.restartTrack({
-              facingMode, resolution: { width: 1280, height: 720 }, frameRate: 30,
+        if (!video || video.readyState === "ended" || video.muted) {
+          if (videoTrackRef.current) {
+            await videoTrackRef.current.restartTrack({
+              facingMode,
+              resolution: { width: 1280, height: 720 },
+              frameRate: 30,
             });
-            freshVideo = publishedVideo.mediaStreamTrack;
+            video = videoTrackRef.current.mediaStreamTrack;
           } else {
-            media?.getVideoTracks().forEach((t) => t.stop());
-            const capture = await navigator.mediaDevices.getUserMedia({
+            const fresh = await navigator.mediaDevices.getUserMedia({
               video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
               audio: false,
             });
-            freshVideo = capture.getVideoTracks()[0];
+            video = fresh.getVideoTracks()[0];
           }
         }
-        if (audioBroken && publishedAudio) await publishedAudio.restartTrack();
-        const freshAudio = publishedAudio?.mediaStreamTrack ?? audio;
-        if (freshVideo && !cancelled) {
-          attachPreview(new MediaStream([
-            freshVideo,
-            ...(freshAudio && freshAudio.readyState === "live" ? [freshAudio] : []),
-          ]));
-          setCameraInterrupted(false);
-        }
-      } catch {
-        // Display a recovery warning, don't mark a temporary OS interruption as stream ended.
-        if (!cancelled) setCameraInterrupted(true);
-      } finally {
-        recoveryInProgressRef.current = false;
+        if (video) attachPreview(new MediaStream([video, ...audio]));
+      } catch (err) {
+        toast.error(describeMediaError(err, "camera"));
       }
     };
-    const schedule = () => {
-      if (pending) clearTimeout(pending);
-      pending = setTimeout(() => void revive(), 900);
-    };
-    const video = videoTrackRef.current?.mediaStreamTrack ?? mediaStreamRef.current?.getVideoTracks()[0];
-    const audio = audioTrackRef.current?.mediaStreamTrack ?? mediaStreamRef.current?.getAudioTracks()[0];
-    for (const track of [video, audio]) {
-      track?.addEventListener("mute", schedule);
-      track?.addEventListener("ended", schedule);
-    }
-    document.addEventListener("visibilitychange", schedule);
-    window.addEventListener("focus", schedule);
-    window.addEventListener("pageshow", schedule);
-    const interval = setInterval(() => void revive(), 4_000);
-    void revive();
+    const onVisible = () => void setTimeout(revive, 300);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onVisible);
     return () => {
-      cancelled = true;
-      if (pending) clearTimeout(pending);
-      clearInterval(interval);
-      for (const track of [video, audio]) {
-        track?.removeEventListener("mute", schedule);
-        track?.removeEventListener("ended", schedule);
-      }
-      document.removeEventListener("visibilitychange", schedule);
-      window.removeEventListener("focus", schedule);
-      window.removeEventListener("pageshow", schedule);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onVisible);
     };
-  }, [phase, mode, facingMode, micEnabled, attachPreview]);
+  }, [phase, mode, facingMode, attachPreview]);
 
-  // Encoder statistics reveal whether poor quality is source, network, or device related.
+  // Measure actual video going out: a speed test alone cannot tell us the WebRTC encoder rate.
   useEffect(() => {
-    if (phase !== "live") {
-      lastSenderSampleRef.current = null;
-      setOutgoingVideo(null);
-      return;
-    }
-    let cancelled = false;
+    if (phase !== "live") return;
+    let active = true;
+    senderStatsRef.current = null;
     const sample = async () => {
       try {
-        const report = await videoTrackRef.current?.getRTCStatsReport();
-        if (!report || cancelled) return;
-        let bytes = 0, width = 0, height = 0, fps = 0;
+        const stats = await videoTrackRef.current?.getRTCStatsReport();
+        if (!stats || !active) return;
+        let bytesSent = 0;
+        let width = 0;
+        let height = 0;
+        let fps = 0;
         let limitation: string | null = null;
-        report.forEach((raw) => {
-          const stat = raw as VideoStatsEntry;
+        stats.forEach((entry) => {
+          const stat = entry as OutboundVideoStats;
           if (stat.type !== "outbound-rtp" || (stat.kind !== "video" && stat.mediaType !== "video")) return;
-          bytes += stat.bytesSent ?? 0;
+          bytesSent += stat.bytesSent ?? 0;
           if ((stat.frameWidth ?? 0) > width) {
             width = stat.frameWidth ?? 0;
             height = stat.frameHeight ?? 0;
@@ -429,23 +385,30 @@ export function StreamStudio({ userId }: { userId: string }) {
             limitation = stat.qualityLimitationReason;
           }
         });
-        if (!bytes) return;
-        const now = Date.now();
-        const previous = lastSenderSampleRef.current;
-        lastSenderSampleRef.current = { at: now, bytes };
-        if (!previous || bytes < previous.bytes || now - previous.at < 1000) return;
-        const mbps = (8 * (bytes - previous.bytes)) / ((now - previous.at) * 1000);
-        if (!cancelled) setOutgoingVideo({ mbps, width, height, fps, limitation });
+        if (!bytesSent) return;
+        const measuredAt = Date.now();
+        const prior = senderStatsRef.current;
+        senderStatsRef.current = { measuredAt, bytesSent };
+        if (!prior || prior.bytesSent > bytesSent) return;
+        const seconds = (measuredAt - prior.measuredAt) / 1000;
+        if (seconds < 1) return;
+        if (active) {
+          setOutgoingVideo({
+            bitrateMbps: (bytesSent - prior.bytesSent) * 8 / seconds / 1_000_000,
+            width, height, fps, limitation,
+          });
+        }
       } catch {
-        // Older browser versions may not provide WebRTC stats.
+        // Some iOS/browser versions don't expose outbound video statistics.
       }
     };
     void sample();
-    const interval = setInterval(() => void sample(), 5000);
+    const timer = setInterval(() => void sample(), 5000);
     return () => {
-      cancelled = true;
-      clearInterval(interval);
-      lastSenderSampleRef.current = null;
+      active = false;
+      clearInterval(timer);
+      senderStatsRef.current = null;
+      setOutgoingVideo(null);
     };
   }, [phase]);
 
@@ -586,7 +549,6 @@ export function StreamStudio({ userId }: { userId: string }) {
         await videoTrackRef.current.replaceTrack(video);
       }
       attachPreview(new MediaStream([video, ...audioTracks]));
-      setCameraInterrupted(false);
       toast.success("Camera reconnected");
     } catch (err) {
       toast.error(describeMediaError(err, "camera"));
@@ -617,7 +579,6 @@ export function StreamStudio({ userId }: { userId: string }) {
   }
 
   function handleStreamAgain() {
-    setCameraInterrupted(false);
     setStream(null);
     streamIdRef.current = null;
     setTitle("");
@@ -677,11 +638,6 @@ export function StreamStudio({ userId }: { userId: string }) {
             </div>
           )}
           {phase === "live" && stream && <LiveReactions streamId={stream.id} canSend={false} />}
-          {phase === "live" && mode === "camera" && cameraInterrupted && (
-            <div role="status" className="absolute inset-x-3 bottom-3 z-20 rounded-lg bg-background/95 p-3 text-center text-sm">
-              Camera or microphone interrupted. Trying to recover. Tap Reconnect camera below if needed.
-            </div>
-          )}
           {phase === "live" && reconnecting && (
             <div className="absolute inset-x-0 bottom-3 z-10 mx-auto w-fit rounded-md bg-background/85 px-3 py-1.5 text-sm">
               Reconnecting… your stream will resume automatically
@@ -720,11 +676,11 @@ export function StreamStudio({ userId }: { userId: string }) {
               </p>
             </div>
             {outgoingVideo && (
-              <div className="mt-4 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
-                Outgoing video: {outgoingVideo.mbps.toFixed(2)} Mbps
+              <div className="mt-4 rounded-lg border border-border p-3 text-xs text-muted-foreground" aria-live="off">
+                Sending: {outgoingVideo.bitrateMbps.toFixed(2)} Mbps
                 {outgoingVideo.width > 0 ? ` · ${outgoingVideo.width}×${outgoingVideo.height}` : ""}
                 {outgoingVideo.fps > 0 ? ` · ${Math.round(outgoingVideo.fps)} FPS` : ""}
-                {outgoingVideo.limitation ? ` · Limited by ${outgoingVideo.limitation}` : ""}
+                {outgoingVideo.limitation ? ` · limited by ${outgoingVideo.limitation}` : ""}
               </div>
             )
 
