@@ -27,12 +27,26 @@ import {
 
 type Phase = "choose" | "setup" | "starting" | "live" | "ended";
 
+/** Outgoing WebRTC sender stats (when supported by the broadcaster's browser). */
+type OutgoingVideo = { bitrateMbps: number; width: number; height: number; fps: number; limitation: string | null };
+type OutboundVideoStats = {
+  type: string;
+  kind?: string;
+  mediaType?: string;
+  bytesSent?: number;
+  frameWidth?: number;
+  frameHeight?: number;
+  framesPerSecond?: number;
+  qualityLimitationReason?: string;
+};
+
 export function StreamStudio({ userId }: { userId: string }) {
   const [phase, setPhase] = useState<Phase>("choose");
   const [mode, setMode] = useState<StreamMode>("camera");
   const [title, setTitle] = useState("");
   const [micEnabled, setMicEnabled] = useState(true);
   const [reconnecting, setReconnecting] = useState(false);
+  const [outgoingVideo, setOutgoingVideo] = useState<OutgoingVideo | null>(null);
   useWakeLock(phase === "setup" || phase === "starting" || phase === "live");
   const [error, setError] = useState<string | null>(null);
   const [stream, setStream] = useState<StreamRow | null>(null);
@@ -51,6 +65,7 @@ export function StreamStudio({ userId }: { userId: string }) {
   const streamIdRef = useRef<string | null>(null);
   const flippingRef = useRef(false);
   const reconnectingRef = useRef(false);
+  const senderStatsRef = useRef<{ measuredAt: number; bytesSent: number } | null>(null);
 
   const attachPreview = useCallback((ms: MediaStream) => {
     mediaStreamRef.current = ms;
@@ -176,7 +191,8 @@ export function StreamStudio({ userId }: { userId: string }) {
         dynacast: true,
         publishDefaults: {
           simulcast: true,
-          videoEncoding: { maxBitrate: 1_500_000, maxFramerate: 30 },
+          // Improve detail at 720p/30. WebRTC still adapts to available upload capacity.
+          videoEncoding: { maxBitrate: mode === "camera" ? 2_400_000 : 1_500_000, maxFramerate: 30 },
           videoSimulcastLayers: [VideoPresets.h360, VideoPresets.h180],
           screenShareEncoding: performanceMode
             ? { maxBitrate: 1_200_000, maxFramerate: 24 }
@@ -341,6 +357,60 @@ export function StreamStudio({ userId }: { userId: string }) {
       window.removeEventListener("pageshow", onVisible);
     };
   }, [phase, mode, facingMode, attachPreview]);
+
+  // Measure actual video going out: a speed test alone cannot tell us the WebRTC encoder rate.
+  useEffect(() => {
+    if (phase !== "live") return;
+    let active = true;
+    senderStatsRef.current = null;
+    const sample = async () => {
+      try {
+        const stats = await videoTrackRef.current?.getRTCStatsReport();
+        if (!stats || !active) return;
+        let bytesSent = 0;
+        let width = 0;
+        let height = 0;
+        let fps = 0;
+        let limitation: string | null = null;
+        stats.forEach((entry) => {
+          const stat = entry as OutboundVideoStats;
+          if (stat.type !== "outbound-rtp" || (stat.kind !== "video" && stat.mediaType !== "video")) return;
+          bytesSent += stat.bytesSent ?? 0;
+          if ((stat.frameWidth ?? 0) > width) {
+            width = stat.frameWidth ?? 0;
+            height = stat.frameHeight ?? 0;
+          }
+          fps = Math.max(fps, stat.framesPerSecond ?? 0);
+          if (stat.qualityLimitationReason && stat.qualityLimitationReason !== "none") {
+            limitation = stat.qualityLimitationReason;
+          }
+        });
+        if (!bytesSent) return;
+        const measuredAt = Date.now();
+        const prior = senderStatsRef.current;
+        senderStatsRef.current = { measuredAt, bytesSent };
+        if (!prior || prior.bytesSent > bytesSent) return;
+        const seconds = (measuredAt - prior.measuredAt) / 1000;
+        if (seconds < 1) return;
+        if (active) {
+          setOutgoingVideo({
+            bitrateMbps: (bytesSent - prior.bytesSent) * 8 / seconds / 1_000_000,
+            width, height, fps, limitation,
+          });
+        }
+      } catch {
+        // Some iOS/browser versions don't expose outbound video statistics.
+      }
+    };
+    void sample();
+    const timer = setInterval(() => void sample(), 5000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      senderStatsRef.current = null;
+      setOutgoingVideo(null);
+    };
+  }, [phase]);
 
   // Stop capture if the component unmounts.
   useEffect(() => stopMedia, [stopMedia]);
@@ -605,6 +675,14 @@ export function StreamStudio({ userId }: { userId: string }) {
                 Anyone with this link can watch — no account needed.
               </p>
             </div>
+            {outgoingVideo && (
+              <div className="mt-4 rounded-lg border border-border p-3 text-xs text-muted-foreground" aria-live="off">
+                Sending: {outgoingVideo.bitrateMbps.toFixed(2)} Mbps
+                {outgoingVideo.width > 0 ? ` · ${outgoingVideo.width}×${outgoingVideo.height}` : ""}
+                {outgoingVideo.fps > 0 ? ` · ${Math.round(outgoingVideo.fps)} FPS` : ""}
+                {outgoingVideo.limitation ? ` · limited by ${outgoingVideo.limitation}` : ""}
+              </div>
+            )}
 
             <div className="mt-6 flex flex-wrap gap-2">
               <Button variant="secondary" onClick={handleToggleMic}>
