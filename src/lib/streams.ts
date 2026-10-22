@@ -110,9 +110,22 @@ export async function createStream({
   return data as StreamRow;
 }
 
+/** Ignore late heartbeats and cleanup writes after a stream is ended. */
 export async function patchStream(streamId: string, patch: Partial<StreamRow>) {
-  const { error } = await supabase.from("streams").update(patch).eq("id", streamId);
+  const { error } = await supabase.from("streams")
+    .update(patch)
+    .eq("id", streamId)
+    .eq("status", "live");
   if (error) throw error;
+}
+
+export async function getStreamStatus(streamId: string) {
+  const { data, error } = await supabase.from("streams")
+    .select("status, ended_reason")
+    .eq("id", streamId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
 export async function endStream(streamId: string, reason: "ended_by_user" | "broadcaster_disconnected") {

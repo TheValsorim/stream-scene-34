@@ -16,10 +16,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getLiveKitConnection } from "@/lib/livekit";
 import { useWakeLock } from "@/hooks/use-wake-lock";
+import { supabase } from "@/integrations/supabase/client";
 import {
   HEARTBEAT_INTERVAL_MS,
   createStream,
   endStream,
+  getStreamStatus,
   patchStream,
   type StreamMode,
   type StreamRow,
@@ -38,6 +40,7 @@ export function StreamStudio({ userId }: { userId: string }) {
   const [stream, setStream] = useState<StreamRow | null>(null);
   const [viewerCount, setViewerCount] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [wasModerated, setWasModerated] = useState(false);
   const [performanceMode, setPerformanceMode] = useState(true);
   const [previewPaused, setPreviewPaused] = useState(false);
   const [facingMode, setFacingMode] = useState<"user" | "environment">("environment");
@@ -51,6 +54,8 @@ export function StreamStudio({ userId }: { userId: string }) {
   const streamIdRef = useRef<string | null>(null);
   const flippingRef = useRef(false);
   const reconnectingRef = useRef(false);
+  const finishingRef = useRef(false);
+  const moderatedRef = useRef(false);
 
   const attachPreview = useCallback((ms: MediaStream) => {
     mediaStreamRef.current = ms;
@@ -168,6 +173,7 @@ export function StreamStudio({ userId }: { userId: string }) {
         roomName: created.livekit_room_name,
         participantName: `broadcaster_${created.id}`,
       });
+      if (moderatedRef.current) return;
 
       // Bad-network tuning: 3 simulcast layers (720p/360p/180p), capped bitrate,
       // dynacast pauses unused layers, and DTX/RED keep audio smooth on loss.
@@ -213,11 +219,18 @@ export function StreamStudio({ userId }: { userId: string }) {
         ),
       ]);
 
+      if (moderatedRef.current) {
+        await room.disconnect().catch(() => {});
+        return;
+      }
+
       const videoMediaTrack = ms.getVideoTracks()[0];
       if (!videoMediaTrack) throw new Error("No video track available to publish.");
       const videoTrack = new LocalVideoTrack(videoMediaTrack);
       videoTrackRef.current = videoTrack;
       await room.localParticipant.publishTrack(videoTrack);
+
+      if (moderatedRef.current) return;
 
       // Screen share may carry its own audio; otherwise use the microphone.
       const capturedAudio = ms.getAudioTracks()[0];
@@ -238,14 +251,20 @@ export function StreamStudio({ userId }: { userId: string }) {
         });
       }
 
+      if (moderatedRef.current) return;
       await patchStream(created.id, {
-        status: "live",
         stream_health: "live",
         last_heartbeat_at: new Date().toISOString(),
       });
 
+      const current = await getStreamStatus(created.id);
+      if (!current || current.status !== "live" || moderatedRef.current) {
+        stopForModeration(current?.ended_reason ?? null);
+        return;
+      }
       setPhase("live");
     } catch (err) {
+      if (moderatedRef.current) return;
       console.error(err);
       if (created) await endStream(created.id, "ended_by_user").catch(() => {});
       roomRef.current?.disconnect().catch(() => {});
@@ -256,7 +275,9 @@ export function StreamStudio({ userId }: { userId: string }) {
   }
 
   const finishStream = useCallback(
-    async (reason: "ended_by_user" | "broadcaster_disconnected") => {
+    async (reason: "ended_by_user" | "broadcaster_disconnected", alreadyEnded = false) => {
+      if (finishingRef.current) return;
+      finishingRef.current = true;
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       heartbeatRef.current = null;
       const id = streamIdRef.current;
@@ -269,20 +290,69 @@ export function StreamStudio({ userId }: { userId: string }) {
       videoTrackRef.current = null;
       audioTrackRef.current = null;
       stopMedia();
-      if (id) await endStream(id, reason).catch(() => {});
+      // Never replace an admin's status/reason during local cleanup.
+      if (id && !alreadyEnded) await endStream(id, reason).catch(() => {});
       setPhase("ended");
     },
     [stopMedia],
   );
+
+  const stopForModeration = useCallback(
+    (reason: string | null) => {
+      if (moderatedRef.current || finishingRef.current) return;
+      moderatedRef.current = true;
+      const byAdmin = reason === "ended_by_admin" || reason === "banned_by_admin";
+      setWasModerated(byAdmin);
+      toast.error(byAdmin ? "Your stream was ended by an administrator." : "This stream has ended.");
+      void finishStream("ended_by_user", true);
+    },
+    [finishStream],
+  );
+
+  // Supabase Realtime provides fast updates, polling catches missed websocket events.
+  useEffect(() => {
+    if (!stream || (phase !== "starting" && phase !== "live")) return;
+    let active = true;
+    const checkStatus = async () => {
+      try {
+        const latest = await getStreamStatus(stream.id);
+        if (active && (!latest || latest.status !== "live")) {
+          stopForModeration(latest?.ended_reason ?? null);
+        }
+      } catch {
+        // A brief network failure must not stop a valid broadcast.
+      }
+    };
+    const channel = supabase
+      .channel(`stream-moderation:${stream.id}`)
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "streams",
+        filter: `id=eq.${stream.id}`,
+      }, ({ new: row }) => {
+        if (row.status === "ended") {
+          stopForModeration(typeof row.ended_reason === "string" ? row.ended_reason : null);
+        }
+      })
+      .subscribe();
+    const timer = setInterval(() => void checkStatus(), 5_000);
+    void checkStatus();
+
+    return () => {
+      active = false;
+      clearInterval(timer);
+      void supabase.removeChannel(channel);
+    };
+  }, [phase, stream?.id, stopForModeration]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Heartbeat + browser lifecycle cleanup while live.
   useEffect(() => {
     if (phase !== "live" || !stream) return;
 
     heartbeatRef.current = setInterval(() => {
+      if (finishingRef.current || moderatedRef.current) return;
       patchStream(stream.id, {
-        status: "live",
-        stream_health: "live",
         viewer_count: viewerCount,
         last_heartbeat_at: new Date().toISOString(),
       }).catch(() => {});
@@ -509,6 +579,9 @@ export function StreamStudio({ userId }: { userId: string }) {
   }
 
   function handleStreamAgain() {
+    finishingRef.current = false;
+    moderatedRef.current = false;
+    setWasModerated(false);
     setStream(null);
     streamIdRef.current = null;
     setTitle("");
@@ -521,7 +594,9 @@ export function StreamStudio({ userId }: { userId: string }) {
     return (
       <div className="rounded-2xl border border-border bg-card p-10 text-center">
         <h2 className="text-2xl font-semibold">Stream ended</h2>
-        <p className="mt-2 text-sm text-muted-foreground">Your stream is no longer live.</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {wasModerated ? "Your stream was ended by an administrator." : "Your stream is no longer live."}
+        </p>
         <Button className="mt-6 h-12 px-8" onClick={handleStreamAgain}>
           Start another stream
         </Button>

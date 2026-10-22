@@ -175,7 +175,7 @@ function LiveModeration({ streams }: { streams: AdminStream[] }) {
   const qc = useQueryClient();
   const end = useMutation({
     mutationFn: adminEndStream,
-    onSuccess: () => { toast.success("Stream ended"); qc.invalidateQueries({ queryKey: ["admin"] }); },
+    onSuccess: () => { toast.success("Stream end signal sent"); qc.invalidateQueries({ queryKey: ["admin"] }); },
     onError: (e: Error) => toast.error(e.message),
   });
   if (streams.length === 0) return <p className="mt-6 text-sm text-muted-foreground">Nobody is live right now.</p>;
