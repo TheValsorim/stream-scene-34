@@ -8,6 +8,7 @@ import { getLiveKitConnection } from "@/lib/livekit";
 import { fetchStreamByShareId, isStale, type StreamRow } from "@/lib/streams";
 import { LiveReactions } from "@/components/LiveReactions";
 import { useWakeLock } from "@/hooks/use-wake-lock";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/watch/$public_share_id")({
   head: () => ({
@@ -192,6 +193,23 @@ function WatchPage() {
       window.removeEventListener("pageshow", onShow);
     };
   }, []);
+
+  // Close the viewer immediately when moderation ends the stream.
+  useEffect(() => {
+    if (!stream || phase === "ended" || phase === "error") return;
+    const channel = supabase
+      .channel(`watch-moderation:${stream.id}`)
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "streams",
+        filter: `id=eq.${stream.id}`,
+      }, ({ new: row }) => {
+        if (row.status === "ended") setPhase("ended");
+      })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [stream?.id, phase === "ended", phase === "error"]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 3. Keep checking whether the broadcaster is still sending heartbeats.
   useEffect(() => {
